@@ -1089,16 +1089,26 @@ addTaskBtn.addEventListener('click', () => {
     showCat: true,
     preselCat: poolAreaFilter === OVERVIEW ? categories[0] : poolAreaFilter,
     async onSave({ name, count, cat }) {
-      const maxOrd = Math.max(...taskTemplates.filter(t=>t.category===cat).map(t=>(typeof t.order === 'number' ? t.order : -1)), -1);
-      const docRef = doc(collection(db, "templates"));
-      await setDoc(docRef, { category:cat, name, count, order:maxOrd+1 });
-      
-      const batch = writeBatch(db);
-      const curKey = fmtMonth(currentDate);
-      for (let i=0; i<count; i++) {
-        batch.set(doc(collection(db, "tasks")), { name, templateId: docRef.id, monthKey: curKey, date: null, status: 'pending' });
+      try {
+        const maxOrd = Math.max(...taskTemplates.filter(t=>t.category===cat).map(t=>(typeof t.order === 'number' ? t.order : -1)), -1);
+        const docRef = doc(collection(db, "templates"));
+        await setDoc(docRef, { category:cat, name, count, order:maxOrd+1 });
+        
+        const batch = writeBatch(db);
+        const curKey = fmtMonth(currentDate);
+        for (let i=0; i<count; i++) {
+          batch.set(doc(collection(db, "tasks")), { name, templateId: docRef.id, monthKey: curKey, date: null, status: 'pending' });
+        }
+        await batch.commit();
+        
+        // Ensure UI doesn't hide the new task because of area filters
+        if (poolAreaFilter !== OVERVIEW && poolAreaFilter !== cat) {
+            poolAreaFilter = cat;
+        }
+      } catch (err) {
+        console.error(err);
+        alert("新增任務失敗，Firestore 回報錯誤: " + err.message + "\n請確保沒有權限問題，或稍後再試。");
       }
-      await batch.commit();
     }
   });
 });
