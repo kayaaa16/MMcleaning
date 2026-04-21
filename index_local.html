@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>旅館清潔日曆管理系統</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="main-header">
+        <div class="logo">寓見青旅，細部清潔安排表</div>
+        <button id="toggle-view-btn" class="header-btn">編輯任務</button>
+    </header>
+
+    <div id="calendar-view" class="view-container">
+        <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>任務卡</h2>
+            </div>
+            <div class="task-pool" id="task-pool" data-date="pool">
+                <!-- Javascript will inject pool tasks here -->
+            </div>
+            
+            <div class="trash-zone" id="trash-zone">
+                <p>📥 拖拉任務至此放回任務池</p>
+            </div>
+        </aside>
+
+        <!-- Main Calendar -->
+        <main class="calendar-container">
+            <header class="calendar-header">
+                <div class="month-selector">
+                    <button id="prev-month">&lt;</button>
+                    <h1 id="current-month-label">2026年 4月</h1>
+                    <button id="next-month">&gt;</button>
+                </div>
+                <div class="calendar-controls">
+                    <button id="today-btn">回到今天</button>
+                </div>
+            </header>
+            
+            <div class="calendar-wrapper">
+                <div class="weekdays">
+                    <div class="weekday-col">週日</div>
+                    <div class="weekday-col">週一</div>
+                    <div class="weekday-col">週二</div>
+                    <div class="weekday-col">週三</div>
+                    <div class="weekday-col">週四</div>
+                    <div class="weekday-col">週五</div>
+                    <div class="weekday-col">週六</div>
+                </div>
+                <div id="calendar-days" class="days-container"></div>
+            </div>
+        </main>
+    </div>
+    </div>
+
+    <!-- Admin View -->
+    <div id="admin-view" class="view-container" style="display: none;">
+        <div class="admin-layout">
+            <aside class="admin-sidebar">
+                <h3>區域分類</h3>
+                <div id="area-list" class="area-list">
+                    <!-- Area list goes here -->
+                </div>
+                <button id="add-area-btn" class="action-btn">+ 新增分類區域</button>
+            </aside>
+            <main class="admin-content">
+                <header class="admin-header">
+                    <h2>任務範本設定</h2>
+                    <button id="generate-pool-btn" class="primary-btn">一鍵產生任務至任務池</button>
+                </header>
+                <div class="admin-toolbar">
+                    <button id="add-task-btn" class="action-btn">+ 新增任務</button>
+                </div>
+                <div id="admin-tasks-container" class="admin-tasks-container">
+                    <!-- Tasks structured by area -->
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
+    <script>
+        // Only apply polyfill for mobile/touch-primary devices to prevent breaking desktop drag & drop
+        if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+            MobileDragDrop.polyfill({
+                dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride
+            });
+            window.addEventListener('touchmove', function() {}, {passive: false});
+        }
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
