@@ -1420,16 +1420,55 @@ function renderAreaList() {
     listEl.innerHTML = '<div style="color:var(--txt3);font-size:.75rem;text-align:center;padding:10px;">目前尚無區域</div>';
     return;
   }
-  categories.forEach(cat => {
+  categories.forEach((cat, index) => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--surface); border-radius:4px; border:1px solid var(--border); font-size:.75rem; color:var(--txt);';
+    
     const nameSpan = document.createElement('span');
     nameSpan.textContent = cat;
+    nameSpan.style.cssText = 'flex:1; margin-right:8px;';
+    
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '10px';
+
+    const editBtn = document.createElement('button');
+    editBtn.innerHTML = '✏️';
+    editBtn.style.cssText = 'background:transparent; border:none; cursor:pointer; font-size:.75rem; filter: grayscale(1); transition: filter 0.2s;';
+    editBtn.onmouseover = () => editBtn.style.filter = 'grayscale(0)';
+    editBtn.onmouseout = () => editBtn.style.filter = 'grayscale(1)';
+
     const delBtn = document.createElement('button');
     delBtn.innerHTML = '✕';
     delBtn.style.cssText = 'background:transparent; border:none; color:var(--txt3); cursor:pointer; font-size:.8rem; transition:color 0.2s;';
     delBtn.onmouseover = () => delBtn.style.color = 'var(--red)';
     delBtn.onmouseout = () => delBtn.style.color = 'var(--txt3)';
+
+    editBtn.onclick = () => {
+      const newName = prompt('請輸入新的區域名稱：', cat);
+      if (newName !== null) {
+        const trimmed = newName.trim();
+        if (trimmed && trimmed !== cat && !categories.includes(trimmed)) {
+          const newCats = [...categories];
+          newCats[index] = trimmed;
+          updateDoc(doc(db, "settings", "global"), { categories: newCats });
+          
+          const batch = writeBatch(db);
+          let needsBatch = false;
+          taskTemplates.forEach(tpl => {
+            if (tpl.category === cat) {
+              batch.update(doc(db, "templates", tpl.id), { category: trimmed });
+              needsBatch = true;
+            }
+          });
+          if (needsBatch) batch.commit();
+
+          if (poolAreaFilter === cat) poolAreaFilter = trimmed;
+          setTimeout(renderAreaList, 100);
+        }
+      }
+    };
+
     delBtn.onclick = () => {
       sysConfirm(`確定要刪除「${cat}」嗎？這將會移除此分類標籤。`, () => {
         const newCats = categories.filter(c => c !== cat);
@@ -1441,8 +1480,11 @@ function renderAreaList() {
         setTimeout(renderAreaList, 100);
       });
     };
+    
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
     row.appendChild(nameSpan);
-    row.appendChild(delBtn);
+    row.appendChild(actions);
     listEl.appendChild(row);
   });
 }
