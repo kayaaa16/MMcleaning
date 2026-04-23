@@ -535,6 +535,73 @@ body {
 .mbtn-save { background: var(--blue); border: none; color: #fff; }
 .mbtn-save:hover { background: var(--blue2); }
 
+/* ━━━━━━━━━━  NOTES POPOVER  ━━━━━━━━━━ */
+.note-icon {
+  flex-shrink: 0; width: 16px; height: 16px;
+  fill: none; stroke: var(--txt3); stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  cursor: pointer; transition: all .15s; margin-left: 2px;
+}
+.note-icon:hover { stroke: var(--blue); }
+.note-icon.has-note { fill: var(--amber); stroke: var(--amber); }
+
+.note-popover {
+  position: absolute; width: 240px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(15,23,42,.15); padding: 12px;
+  z-index: 2000; display: none; flex-direction: column; gap: 8px;
+}
+.note-popover.open { display: flex; animation: popIn .15s ease-out; }
+@keyframes popIn { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
+.note-popover textarea {
+  width: 100%; height: 80px; resize: none; border: 1.5px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font-family: var(--font); font-size: .85rem;
+  color: var(--txt); background: var(--surf2); outline: none;
+}
+.note-popover textarea:focus { border-color: var(--blue); background: #fff; }
+.note-popover .np-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.note-popover button {
+  padding: 4px 10px; border-radius: 5px; font-size: .75rem; font-weight: 500; cursor: pointer; border: none; font-family: var(--font);
+}
+.np-cancel { background: var(--surf2); color: var(--txt2); }
+.np-cancel:hover { background: var(--border); color: var(--txt); }
+.np-save { background: var(--blue); color: #fff; }
+.np-save:hover { background: var(--blue2); }
+
+/* ━━━━━━━━━━  SIDEBAR TABS & SHIFT DATA  ━━━━━━━━━━ */
+.tabs-head { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.sidebar-tabs {
+  display: flex; gap: 4px; background: var(--surf2); padding: 3px; border-radius: 8px; border: 1px solid var(--border);
+}
+.s-tab {
+  flex: 1; padding: 6px 0; text-align: center; font-size: .8rem; font-weight: 600; color: var(--txt2);
+  border-radius: 6px; cursor: pointer; border: none; background: transparent; font-family: var(--font);
+  transition: all .15s;
+}
+.s-tab.active { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(30,41,59,.1); }
+
+.shift-content {
+  flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 10px 14px; gap: 10px;
+}
+.shift-date-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.shift-date-picker label { font-size: .8rem; font-weight: 600; color: var(--txt2); }
+.shift-date-picker input {
+  flex: 1; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px;
+  font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; background: var(--surf2);
+}
+.shift-date-picker input:focus { border-color: var(--blue); background: #fff; }
+
+.shift-row {
+  display: flex; flex-direction: column; gap: 4px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+}
+.shift-row-label { font-size: .8rem; font-weight: 600; color: var(--txt); }
+.shift-row-select {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px;
+  font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; cursor: pointer; background: var(--surf2);
+}
+.shift-row-select:focus { border-color: var(--blue); }
+
 /* ━━━━━━━━━━  SCROLLBARS  ━━━━━━━━━━ */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -630,20 +697,37 @@ body {
 
   <!-- ━━ SIDEBAR (unified) ━━ -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head">
-      <span class="sidebar-title">任務卡</span>
-      <button class="edit-toggle-btn" id="edit-toggle-btn">✎ 編輯</button>
-    </div>
-    <div class="sidebar-filters" id="pool-area-tabs"></div>
-    <div class="task-pool" id="task-pool"></div>
-    <div class="edit-actions-bar" style="flex-direction: column;">
-      <div style="display:flex; gap:6px;">
-        <button class="eb-btn" id="add-area-btn">＋ 新增區域</button>
-        <button class="eb-btn primary" id="add-task-btn">＋ 新增任務</button>
+    <div class="sidebar-head tabs-head">
+      <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <span class="sidebar-title" style="display:none;">任務卡</span>
+        <div class="sidebar-tabs">
+          <button class="s-tab active" data-tab="pool">任務卡</button>
+          <button class="s-tab" data-tab="shift">班表資料</button>
+        </div>
+        <button class="edit-toggle-btn" id="edit-toggle-btn">✎ 編輯</button>
       </div>
-      <button class="eb-btn" id="copy-last-btn" style="color:var(--txt);">📥 自上個月拷貝所有任務</button>
     </div>
-    <div class="trash-zone" id="trash-zone">📥 拖曳至此放回任務池</div>
+    
+    <div id="tab-content-pool" style="display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
+      <div class="sidebar-filters" id="pool-area-tabs"></div>
+      <div class="task-pool" id="task-pool"></div>
+      <div class="edit-actions-bar" style="flex-direction: column;">
+        <div style="display:flex; gap:6px;">
+          <button class="eb-btn" id="add-area-btn">＋ 新增區域</button>
+          <button class="eb-btn primary" id="add-task-btn">＋ 新增任務</button>
+        </div>
+        <button class="eb-btn" id="copy-last-btn" style="color:var(--txt);">📥 自上個月拷貝所有任務</button>
+      </div>
+      <div class="trash-zone" id="trash-zone">📥 拖曳至此放回任務池</div>
+    </div>
+
+    <div id="tab-content-shift" class="shift-content" style="display: none;">
+      <div class="shift-date-picker">
+        <label>日期</label>
+        <input type="date" id="shift-date">
+      </div>
+      <div id="shift-rows-container"></div>
+    </div>
   </aside>
 
   <!-- ━━ CALENDAR ━━ -->
@@ -688,6 +772,15 @@ body {
   </div>
 </div>
 
+<!-- ━━━━ NOTE POPOVER ━━━━ -->
+<div class="note-popover" id="note-popover">
+  <textarea id="np-text" placeholder="新增備註..."></textarea>
+  <div class="np-actions">
+    <button class="np-cancel" id="np-cancel">取消</button>
+    <button class="np-save" id="np-save">儲存</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
 <script>
     // Only apply polyfill for mobile/touch-primary devices to prevent breaking desktop drag & drop
@@ -727,16 +820,26 @@ let taskTemplates = [];
 let poolTasksByMonth = {};
 let scheduledTasks   = [];
 let poolAreaFilter   = OVERVIEW;
+let employees = [];
+let currentShiftDate = '';
+let shiftUnsubscribe = null;
 
 /* ══════════════════════════════════════════════
    DB REALTIME LISTENERS
 ══════════════════════════════════════════════ */
 onSnapshot(doc(db, "settings", "global"), (dSnap) => {
-  if (dSnap.exists() && dSnap.data().categories) {
-    categories = dSnap.data().categories;
-    renderPoolAreaTabs();
+  if (dSnap.exists()) {
+    const data = dSnap.data();
+    if (data.categories) {
+      categories = data.categories;
+      renderPoolAreaTabs();
+    }
+    if (data.employees) {
+      employees = data.employees;
+      if (currentShiftDate) renderShiftRows();
+    }
   } else {
-    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'] });
+    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [] });
   }
 });
 
@@ -918,6 +1021,11 @@ function renderPool() {
   let tasks = getCurMonthPool().slice();
   if (poolAreaFilter !== OVERVIEW) tasks = tasks.filter(t => catOf(t) === poolAreaFilter);
 
+  // 依照首字筆畫排列 (Sorting by stroke count in Traditional Chinese)
+  // localeCompare with 'zh-TW-u-co-stroke' efficiently sorts Chinese characters by strokes,
+  // meaning identical items (same name) will automatically group together.
+  tasks.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW-u-co-stroke'));
+
   if (!tasks.length) {
     taskPoolEl.innerHTML = `<div style="color:var(--txt3);font-size:.78rem;text-align:center;padding:20px 0 0;line-height:1.7;">
       ${poolAreaFilter===OVERVIEW?'本月任務池是空的':'此區域無任務'}<br><span style="font-size:.72rem">請點擊右上方「✎ 編輯」加入工作</span></div>`;
@@ -956,12 +1064,15 @@ function mkTaskCard(task, src, showCat=false) {
     card.classList.add('overdue');
 
   const cat = catOf(task);
+  const hasNote = task.note && task.note.trim() !== '';
+  const noteIconSvg = `<svg class="note-icon ${hasNote ? 'has-note' : ''}" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`;
 
   if (src === 'pool') {
     const tpl = taskTemplates.find(x => x.id === task.templateId);
     card.innerHTML = `
       <div class="task-name">${task.name}</div>
       <div class="task-cat-tag">${cat}</div>
+      ${noteIconSvg}
       <div class="card-edit-btns">
         <button class="card-btn" data-cedit title="編輯">✏</button>
         <button class="card-btn del" data-cdel title="移除">✕</button>
@@ -981,8 +1092,19 @@ function mkTaskCard(task, src, showCat=false) {
       deleteDoc(doc(db, "tasks", task.id));
     });
   } else {
-    card.innerHTML = `<div class="task-name">${task.name}</div>`;
-    card.addEventListener('click', () => toggleStatus(task.id, task.status));
+    card.innerHTML = `<div class="task-name">${task.name}</div>${noteIconSvg}`;
+    card.addEventListener('click', (e) => {
+      if(e.target.closest('.note-icon')) return;
+      toggleStatus(task.id, task.status);
+    });
+  }
+
+  const nIcon = card.querySelector('.note-icon');
+  if (nIcon) {
+    nIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof openNotePopover === 'function') openNotePopover(task, nIcon);
+    });
   }
 
   card.addEventListener('dragstart', () => {
@@ -1228,6 +1350,163 @@ function editTemplate(id) {
       if(opCount > 0) batchChunks.push(currentBatch);
       for(let batch of batchChunks) await batch.commit();
     }
+  });
+}
+
+/* ══════════════════════════════════════════════
+   NOTE POPOVER LOGIC
+══════════════════════════════════════════════ */
+const npPopover = $('note-popover');
+const npText = $('np-text');
+let currentNoteTaskId = null;
+
+function openNotePopover(task, iconEl) {
+  currentNoteTaskId = task.id;
+  npText.value = task.note || '';
+  
+  const rect = iconEl.getBoundingClientRect();
+  npPopover.style.left = `${rect.right + 10}px`;
+  npPopover.style.top = `${rect.top}px`;
+  
+  // Adjust if it goes offscreen
+  npPopover.classList.add('open');
+  const popRect = npPopover.getBoundingClientRect();
+  if (popRect.right > window.innerWidth) {
+    npPopover.style.left = `${rect.left - popRect.width - 10}px`;
+  }
+  if (popRect.bottom > window.innerHeight) {
+    npPopover.style.top = `${window.innerHeight - popRect.height - 10}px`;
+  }
+  npText.focus();
+}
+
+$('np-cancel').addEventListener('click', () => {
+  npPopover.classList.remove('open');
+  currentNoteTaskId = null;
+});
+
+$('np-save').addEventListener('click', () => {
+  if (currentNoteTaskId) {
+    updateDoc(doc(db, "tasks", currentNoteTaskId), { note: npText.value });
+  }
+  npPopover.classList.remove('open');
+  currentNoteTaskId = null;
+});
+
+// Close popover when clicking outside
+document.addEventListener('click', (e) => {
+  if (npPopover.classList.contains('open') && !npPopover.contains(e.target) && !e.target.closest('.note-icon')) {
+    npPopover.classList.remove('open');
+  }
+});
+
+/* ══════════════════════════════════════════════
+   SIDEBAR TABS & SHIFT DATA LOGIC
+══════════════════════════════════════════════ */
+const tabContentPool = $('tab-content-pool');
+const tabContentShift = $('tab-content-shift');
+const sTabs = document.querySelectorAll('.s-tab');
+const shiftDatePicker = $('shift-date');
+const shiftRowsContainer = $('shift-rows-container');
+
+const SHIFT_ROLES = [
+  '11AM 淋浴間', '11AM 廚房', '12PM 拆房', '10AM 早班',
+  '11AM 午班', '12PM 晚班', '支援', '11AM 廁所'
+];
+let currentShiftData = {};
+
+sTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    sTabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab;
+    if (target === 'pool') {
+      tabContentPool.style.display = 'flex';
+      tabContentShift.style.display = 'none';
+      editToggleBtn.style.display = 'block';
+    } else {
+      tabContentPool.style.display = 'none';
+      tabContentShift.style.display = 'flex';
+      editToggleBtn.style.display = 'none';
+      if (!currentShiftDate) {
+        currentShiftDate = fmtDate(REAL_TODAY);
+        shiftDatePicker.value = currentShiftDate;
+        loadShiftData(currentShiftDate);
+      }
+    }
+  });
+});
+
+shiftDatePicker.addEventListener('change', (e) => {
+  if (e.target.value) {
+    currentShiftDate = e.target.value;
+    loadShiftData(currentShiftDate);
+  }
+});
+
+function loadShiftData(dateStr) {
+  if (shiftUnsubscribe) shiftUnsubscribe();
+  shiftUnsubscribe = onSnapshot(doc(db, "shifts", dateStr), (dSnap) => {
+    if (dSnap.exists()) {
+      currentShiftData = dSnap.data();
+    } else {
+      currentShiftData = {};
+    }
+    renderShiftRows();
+  });
+}
+
+function renderShiftRows() {
+  shiftRowsContainer.innerHTML = '';
+  SHIFT_ROLES.forEach(role => {
+    const row = document.createElement('div');
+    row.className = 'shift-row';
+    
+    const lbl = document.createElement('div');
+    lbl.className = 'shift-row-label';
+    lbl.textContent = role;
+    
+    const sel = document.createElement('select');
+    sel.className = 'shift-row-select';
+    sel.innerHTML = `<option value="">-- 選擇員工 --</option>`;
+    employees.forEach(emp => {
+      sel.innerHTML += `<option value="${emp}">${emp}</option>`;
+    });
+    sel.innerHTML += `<option value="__add__">＋ 新增員工</option>`;
+    
+    if (currentShiftData[role]) {
+      sel.value = currentShiftData[role];
+    }
+    
+    sel.addEventListener('change', (e) => {
+      if (e.target.value === '__add__') {
+        sel.value = currentShiftData[role] || ''; // Revert temp
+        const newEmp = prompt('請輸入新員工姓名：');
+        if (newEmp && newEmp.trim() && !employees.includes(newEmp.trim())) {
+          const newEmps = [...employees, newEmp.trim()];
+          updateDoc(doc(db, "settings", "global"), { employees: newEmps }).then(() => {
+            updateShiftRole(role, newEmp.trim());
+          });
+        }
+      } else {
+        updateShiftRole(role, e.target.value);
+      }
+    });
+    
+    row.appendChild(lbl);
+    row.appendChild(sel);
+    shiftRowsContainer.appendChild(row);
+  });
+}
+
+function updateShiftRole(role, empName) {
+  if (!currentShiftDate) return;
+  const docRef = doc(db, "shifts", currentShiftDate);
+  const updateData = {};
+  updateData[role] = empName;
+  
+  setDoc(docRef, updateData, { merge: true }).catch(err => {
+    console.error("更新班表失敗:", err);
   });
 }
 </script>
