@@ -918,11 +918,6 @@ function renderPool() {
   let tasks = getCurMonthPool().slice();
   if (poolAreaFilter !== OVERVIEW) tasks = tasks.filter(t => catOf(t) === poolAreaFilter);
 
-  // 依照首字筆畫排列 (Sorting by stroke count in Traditional Chinese)
-  // localeCompare with 'zh-TW-u-co-stroke' efficiently sorts Chinese characters by strokes,
-  // meaning identical items (same name) will automatically group together.
-  tasks.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW-u-co-stroke'));
-
   if (!tasks.length) {
     taskPoolEl.innerHTML = `<div style="color:var(--txt3);font-size:.78rem;text-align:center;padding:20px 0 0;line-height:1.7;">
       ${poolAreaFilter===OVERVIEW?'本月任務池是空的':'此區域無任務'}<br><span style="font-size:.72rem">請點擊右上方「✎ 編輯」加入工作</span></div>`;
