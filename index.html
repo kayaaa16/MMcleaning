@@ -952,10 +952,11 @@ editToggleBtn.addEventListener('click', () => {
 ══════════════════════════════════════════════ */
 let _modalCb = null;
 
-function openModal({ title, name='', count=1, showCat=true, preselCat=null, onSave }) {
+function openModal({ title, name='', count=1, showCat=true, showCount=true, preselCat=null, onSave }) {
   mTitle.textContent = title;
   mName.value  = name;
   mCount.value = count;
+  mCount.closest('.mfield').style.display = showCount ? 'block' : 'none';
   mCatWrap.style.display = showCat ? 'block' : 'none';
   if (showCat) {
     mCat.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -1246,23 +1247,20 @@ addTaskBtn.addEventListener('click', () => {
 });
 
 addAreaBtn.addEventListener('click', () => {
-  openModal({ title: '新增分類區域', showCat: false });
-  mCount.closest('.mfield').style.display = 'none';
-  const origSave = mSave.onclick;
-  mSave.onclick = () => {
-    const name = mName.value.trim();
-    if (!name) { mName.focus(); return; }
-    if (name && !categories.includes(name)) {
-      const newCats = [...categories, name];
-      updateDoc(doc(db, "settings", "global"), { categories: newCats });
-      poolAreaFilter = name;
-    }
-    mCount.closest('.mfield').style.display = 'block';
-    mSave.onclick = origSave;
-    mName.placeholder = '例：男淋浴間清潔';
-    closeModal();
-  };
   mName.placeholder = '例：C棟';
+  openModal({ 
+    title: '新增分類區域', 
+    showCat: false, 
+    showCount: false,
+    onSave: ({ name }) => {
+      if (name && !categories.includes(name)) {
+        const newCats = [...categories, name];
+        updateDoc(doc(db, "settings", "global"), { categories: newCats });
+        poolAreaFilter = name;
+      }
+      mName.placeholder = '例：男淋浴間清潔';
+    }
+  });
 });
 
 copyLastBtn.addEventListener('click', async () => {
@@ -1493,13 +1491,22 @@ function renderShiftRows() {
     sel.addEventListener('change', (e) => {
       if (e.target.value === '__add__') {
         sel.value = currentShiftData[role] || ''; // Revert temp
-        const newEmp = prompt('請輸入新員工姓名：');
-        if (newEmp && newEmp.trim() && !employees.includes(newEmp.trim())) {
-          const newEmps = [...employees, newEmp.trim()];
-          updateDoc(doc(db, "settings", "global"), { employees: newEmps }).then(() => {
-            updateShiftRole(role, newEmp.trim());
-          });
-        }
+        mName.placeholder = '例：王小明';
+        openModal({
+          title: '新增員工',
+          showCat: false,
+          showCount: false,
+          onSave: ({ name }) => {
+            const newEmp = name.trim();
+            if (newEmp && !employees.includes(newEmp)) {
+              const newEmps = [...employees, newEmp];
+              updateDoc(doc(db, "settings", "global"), { employees: newEmps }).then(() => {
+                updateShiftRole(role, newEmp);
+              });
+            }
+            mName.placeholder = '例：男淋浴間清潔';
+          }
+        });
       } else {
         updateShiftRole(role, e.target.value);
       }
