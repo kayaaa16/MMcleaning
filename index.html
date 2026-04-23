@@ -604,18 +604,19 @@ body {
 
 .shift-row {
   display: flex; flex-direction: row; align-items: center; gap: 8px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 8px; cursor: grab; transition: all .15s;
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px; transition: all .15s; margin-bottom: 4px;
 }
-.shift-row:active { cursor: grabbing; }
-.shift-row.dragging { opacity: 0.5; transform: scale(0.98); }
-.shift-row.drag-over { border-color: var(--blue); border-top-width: 3px; }
 .shift-row-label { font-size: .8rem; font-weight: 600; color: var(--txt); flex-shrink: 0; min-width: 80px; }
 .shift-row-divider { color: var(--txt3); font-size: .9rem; flex-shrink: 0; user-select: none; }
 .shift-row-select {
   flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;
   font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; cursor: pointer; background: var(--surf2);
 }
-.shift-row-select:focus { border-color: var(--blue); }
+.shift-row-select:focus { border-color: var(--blue); background: #fff; }
+.shift-group-separator { height: 1px; background: var(--border2); margin: 8px 4px; opacity: 0.6; }
+.emp-item { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); font-size: .85rem; }
+.emp-item-del { color: var(--txt3); cursor: pointer; font-weight: bold; padding: 4px; font-size: 1rem; border-radius: 4px; transition: all 0.1s; }
+.emp-item-del:hover { color: var(--red); background: #fee2e2; }
 
 /* ━━━━━━━━━━  SCROLLBARS  ━━━━━━━━━━ */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -798,16 +799,29 @@ body {
 <div class="modal-overlay" id="emp-modal-overlay">
   <div class="modal">
     <h3 id="emp-modal-title">管理員工</h3>
-    <div class="mfield" style="flex-direction:row; gap:6px;">
+    <div class="mfield" style="flex-direction:row; gap:6px; align-items: center;">
       <input type="text" id="new-emp-name" placeholder="輸入新員工姓名..." style="flex:1;">
       <button class="mbtn mbtn-save" id="add-emp-btn" style="padding:4px 12px; flex-shrink:0;">新增</button>
     </div>
     <div class="mfield">
+      <div style="font-size:.75rem; color:var(--txt2); font-weight:600; margin-bottom:4px;">目前人員</div>
       <div id="emp-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); padding:6px; border-radius:6px; background:var(--surf2);">
       </div>
     </div>
     <div class="mfoot">
       <button class="mbtn mbtn-cancel" id="emp-m-close">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ SYSTEM CONFIRM MODAL ━━━━ -->
+<div class="modal-overlay" id="sys-confirm-overlay" style="z-index: 10000;">
+  <div class="modal">
+    <h3 id="sys-confirm-title" style="margin-bottom: 12px;">確認操作</h3>
+    <div id="sys-confirm-msg" style="font-size: .9rem; color: var(--txt); margin-bottom: 20px;"></div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-cancel" id="sys-confirm-cancel">取消</button>
+      <button class="mbtn mbtn-save" id="sys-confirm-ok" style="background: var(--red);">確認刪除</button>
     </div>
   </div>
 </div>
@@ -1019,6 +1033,25 @@ mSave.addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 mName.addEventListener('keydown', e => { if (e.key==='Enter') mSave.click(); });
+
+function sysConfirm(msg, onOk) {
+  $('sys-confirm-msg').textContent = msg;
+  const overlay = $('sys-confirm-overlay');
+  overlay.classList.add('open');
+  
+  const okBtn = $('sys-confirm-ok');
+  const cancelBtn = $('sys-confirm-cancel');
+  
+  const cleanup = () => {
+    overlay.classList.remove('open');
+    okBtn.removeEventListener('click', handleOk);
+    cancelBtn.removeEventListener('click', cleanup);
+  };
+  const handleOk = () => { cleanup(); if (onOk) onOk(); };
+  
+  okBtn.addEventListener('click', handleOk);
+  cancelBtn.addEventListener('click', cleanup);
+}
 
 /* ══════════════════════════════════════════════
    HELPERS
@@ -1648,10 +1681,10 @@ function renderEmpList() {
     delBtn.textContent = '✕';
     delBtn.title = '刪除員工';
     delBtn.addEventListener('click', () => {
-      if (confirm(`確定要刪除員工「${emp}」嗎？`)) {
+      sysConfirm(`確定要刪除員工「${emp}」嗎？`, () => {
         const newEmps = employees.filter(e => e !== emp);
         updateDoc(doc(db, "settings", "global"), { employees: newEmps });
-      }
+      });
     });
     
     item.appendChild(nameSpan);
