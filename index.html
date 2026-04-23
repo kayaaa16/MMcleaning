@@ -204,6 +204,7 @@ body {
   white-space: nowrap;
 }
 .area-tab.active   { background: var(--blue); border-color: var(--blue); color: #fff; }
+.area-tab.drag-over-tab { background: var(--blue); border-color: var(--blue); color: #fff; transform: scale(1.05); }
 .area-tab:hover:not(.active) { border-color: var(--border2); color: var(--txt); }
 /* Pool list */
 .task-pool {
@@ -1201,6 +1202,32 @@ function makeAreaTabBtn(label, active, onClick) {
   btn.className = `area-tab${active?' active':''}`;
   btn.textContent = label;
   btn.addEventListener('click', onClick);
+
+  if (label !== '全部') {
+    btn.addEventListener('dragover', e => {
+      if (dragData && dragData.templateId && catOf(dragData) !== label) {
+        e.preventDefault();
+        btn.classList.add('drag-over-tab');
+      }
+    });
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('drag-over-tab');
+    });
+    btn.addEventListener('drop', e => {
+      e.preventDefault();
+      btn.classList.remove('drag-over-tab');
+      if (dragData && dragData.templateId) {
+        const oldCat = catOf(dragData);
+        if (oldCat !== label) {
+          droppedOk = true;
+          sysConfirm(`確定要將「${dragData.name}」移至「${label}」分類嗎？`, () => {
+            updateDoc(doc(db, "templates", dragData.templateId), { category: label });
+          });
+        }
+      }
+    });
+  }
+
   return btn;
 }
 
