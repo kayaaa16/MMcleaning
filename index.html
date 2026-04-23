@@ -1213,7 +1213,7 @@ function mkTaskCard(task, src, showCat=false) {
       deleteDoc(doc(db, "tasks", task.id));
     });
   } else {
-    card.innerHTML = `<div class="task-name"><span style="color:var(--txt3); margin-right:3px; font-weight:600; font-size:0.6rem;">[${cat}]</span>${task.name}</div>${noteIconSvg}`;
+    card.innerHTML = `<div class="task-name">${task.name}<span style="color:var(--txt3); margin-left:4px; font-weight:600; font-size:0.6rem;">[${cat}]</span></div>${noteIconSvg}`;
     card.addEventListener('click', (e) => {
       if(e.target.closest('.note-icon')) return;
       toggleStatus(task.id, task.status);
