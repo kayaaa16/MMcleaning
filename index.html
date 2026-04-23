@@ -608,11 +608,29 @@ body {
 }
 .shift-row-label { font-size: .8rem; font-weight: 600; color: var(--txt); flex-shrink: 0; min-width: 80px; }
 .shift-row-divider { color: var(--txt3); font-size: .9rem; flex-shrink: 0; user-select: none; }
-.shift-row-select {
-  flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;
-  font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; cursor: pointer; background: var(--surf2);
+.multi-select-container {
+  flex: 1; min-width: 0; position: relative; font-family: var(--font);
 }
-.shift-row-select:focus { border-color: var(--blue); background: #fff; }
+.multi-select-trigger {
+  width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;
+  font-size: .85rem; color: var(--txt); outline: none; cursor: pointer; background: var(--surf2);
+  text-align: left; display: flex; justify-content: space-between; align-items: center;
+  min-height: 28px;
+}
+.multi-select-trigger:hover, .multi-select-container.open .multi-select-trigger { border-color: var(--blue); background: #fff; }
+.multi-select-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px;
+  background: #fff; border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto;
+  z-index: 100; display: none; flex-direction: column; padding: 4px;
+}
+.multi-select-container.open .multi-select-dropdown { display: flex; }
+.multi-select-option {
+  padding: 6px 8px; font-size: .85rem; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.multi-select-option:hover { background: var(--surf2); }
+.multi-select-option.selected { color: var(--blue); font-weight: 600; background: #eff6ff; }
 .shift-group-separator { height: 1px; background: var(--border2); margin: 8px 4px; opacity: 0.6; }
 .emp-item { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); font-size: .85rem; }
 .emp-item-del { color: var(--txt3); cursor: pointer; font-weight: bold; padding: 4px; font-size: 1rem; border-radius: 4px; transition: all 0.1s; }
@@ -1311,7 +1329,12 @@ function mkDayCell(dateObj, isOther=false) {
     .filter(t=>t.date===ds)
     .sort((a,b)=>(a.status==='completed'?1:0)-(b.status==='completed'?1:0));
 
-  const MAX_VISIBLE = 5;
+  let MAX_VISIBLE = 5;
+  if (typeof viewMode !== 'undefined') {
+    if (viewMode === '1week') MAX_VISIBLE = 99;
+    else if (viewMode === '2weeks') MAX_VISIBLE = 12;
+  }
+
   dayTasks.slice(0, MAX_VISIBLE).forEach(t => cell.appendChild(mkTaskCard(t,'calendar')));
   if (dayTasks.length > MAX_VISIBLE) {
     const more = document.createElement('div');
@@ -1531,6 +1554,9 @@ document.addEventListener('click', (e) => {
   if (npPopover.classList.contains('open') && !npPopover.contains(e.target) && !e.target.closest('.note-icon')) {
     npPopover.classList.remove('open');
   }
+  if (!e.target.closest('.multi-select-container')) {
+    document.querySelectorAll('.multi-select-container.open').forEach(c => c.classList.remove('open'));
+  }
 });
 
 /* ══════════════════════════════════════════════
@@ -1601,25 +1627,60 @@ function renderShiftRows() {
       divi.className = 'shift-row-divider';
       divi.textContent = '|';
       
-      const sel = document.createElement('select');
-      sel.className = 'shift-row-select';
-      sel.innerHTML = `<option value="">-- 選擇員工 --</option>`;
+      const container = document.createElement('div');
+      container.className = 'multi-select-container';
+      
+      const trigger = document.createElement('div');
+      trigger.className = 'multi-select-trigger';
+      
+      const dropdown = document.createElement('div');
+      dropdown.className = 'multi-select-dropdown';
+      
+      const valStr = currentShiftData[role] || (role === '11AM AB廁所' ? currentShiftData['11AM 廁所'] : "");
+      let selectedEmps = valStr ? valStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+      
+      const updateTriggerText = () => {
+        trigger.innerHTML = `<span>${selectedEmps.length > 0 ? selectedEmps.join(', ') : '<span style="color:var(--txt3)">-- 選擇員工 --</span>'}</span>
+                             <span style="color:var(--txt3);font-size:0.7rem;">▼</span>`;
+      };
+      updateTriggerText();
+      
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.multi-select-container.open').forEach(c => {
+          if (c !== container) c.classList.remove('open');
+        });
+        container.classList.toggle('open');
+      });
+      
       employees.forEach(emp => {
-        sel.innerHTML += `<option value="${emp}">${emp}</option>`;
+        const opt = document.createElement('div');
+        opt.className = 'multi-select-option' + (selectedEmps.includes(emp) ? ' selected' : '');
+        opt.innerHTML = `<span>${emp}</span><span>${selectedEmps.includes(emp) ? '✓' : ''}</span>`;
+        
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (selectedEmps.includes(emp)) {
+            selectedEmps = selectedEmps.filter(e => e !== emp);
+            opt.classList.remove('selected');
+            opt.innerHTML = `<span>${emp}</span><span></span>`;
+          } else {
+            selectedEmps.push(emp);
+            opt.classList.add('selected');
+            opt.innerHTML = `<span>${emp}</span><span>✓</span>`;
+          }
+          updateTriggerText();
+          updateShiftRole(role, selectedEmps.join(', '));
+        });
+        dropdown.appendChild(opt);
       });
       
-      const val = currentShiftData[role] || (role === '11AM AB廁所' ? currentShiftData['11AM 廁所'] : null);
-      if (val) {
-        sel.value = val;
-      }
-      
-      sel.addEventListener('change', (e) => {
-        updateShiftRole(role, e.target.value);
-      });
+      container.appendChild(trigger);
+      container.appendChild(dropdown);
       
       row.appendChild(lbl);
       row.appendChild(divi);
-      row.appendChild(sel);
+      row.appendChild(container);
       shiftRowsContainer.appendChild(row);
     });
     
