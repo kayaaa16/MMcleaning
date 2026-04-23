@@ -584,7 +584,6 @@ body {
   flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 10px 14px; gap: 10px;
 }
 .shift-date-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.shift-date-picker label { font-size: .8rem; font-weight: 600; color: var(--txt2); }
 .shift-date-picker input {
   flex: 1; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px;
   font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; background: var(--surf2);
@@ -592,12 +591,16 @@ body {
 .shift-date-picker input:focus { border-color: var(--blue); background: #fff; }
 
 .shift-row {
-  display: flex; flex-direction: column; gap: 4px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+  display: flex; flex-direction: row; align-items: center; gap: 8px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px; cursor: grab; transition: all .15s;
 }
-.shift-row-label { font-size: .8rem; font-weight: 600; color: var(--txt); }
+.shift-row:active { cursor: grabbing; }
+.shift-row.dragging { opacity: 0.5; transform: scale(0.98); }
+.shift-row.drag-over { border-color: var(--blue); border-top-width: 3px; }
+.shift-row-label { font-size: .8rem; font-weight: 600; color: var(--txt); flex-shrink: 0; min-width: 80px; }
+.shift-row-divider { color: var(--txt3); font-size: .9rem; flex-shrink: 0; user-select: none; }
 .shift-row-select {
-  width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px;
+  flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;
   font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; cursor: pointer; background: var(--surf2);
 }
 .shift-row-select:focus { border-color: var(--blue); }
@@ -702,7 +705,7 @@ body {
         <span class="sidebar-title" style="display:none;">任務卡</span>
         <div class="sidebar-tabs">
           <button class="s-tab active" data-tab="pool">任務卡</button>
-          <button class="s-tab" data-tab="shift">班表資料</button>
+          <button class="s-tab" data-tab="shift">班表</button>
         </div>
         <button class="edit-toggle-btn" id="edit-toggle-btn">✎ 編輯</button>
       </div>
@@ -723,7 +726,6 @@ body {
 
     <div id="tab-content-shift" class="shift-content" style="display: none;">
       <div class="shift-date-picker">
-        <label>日期</label>
         <input type="date" id="shift-date">
       </div>
       <div id="shift-rows-container"></div>
@@ -824,6 +826,11 @@ let employees = [];
 let currentShiftDate = '';
 let shiftUnsubscribe = null;
 
+let SHIFT_ROLES = [
+  '11AM 淋浴間', '11AM 廚房', '12PM 拆房', '10AM 早班',
+  '11AM 午班', '12PM 晚班', '支援', '11AM 廁所'
+];
+
 /* ══════════════════════════════════════════════
    DB REALTIME LISTENERS
 ══════════════════════════════════════════════ */
@@ -834,12 +841,15 @@ onSnapshot(doc(db, "settings", "global"), (dSnap) => {
       categories = data.categories;
       renderPoolAreaTabs();
     }
+    if (data.shiftRolesOrder) {
+      SHIFT_ROLES = data.shiftRolesOrder;
+    }
     if (data.employees) {
       employees = data.employees;
       if (currentShiftDate) renderShiftRows();
     }
   } else {
-    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [] });
+    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [], shiftRolesOrder: SHIFT_ROLES });
   }
 });
 
@@ -1409,10 +1419,6 @@ const sTabs = document.querySelectorAll('.s-tab');
 const shiftDatePicker = $('shift-date');
 const shiftRowsContainer = $('shift-rows-container');
 
-const SHIFT_ROLES = [
-  '11AM 淋浴間', '11AM 廚房', '12PM 拆房', '10AM 早班',
-  '11AM 午班', '12PM 晚班', '支援', '11AM 廁所'
-];
 let currentShiftData = {};
 
 sTabs.forEach(tab => {
@@ -1461,10 +1467,16 @@ function renderShiftRows() {
   SHIFT_ROLES.forEach(role => {
     const row = document.createElement('div');
     row.className = 'shift-row';
+    row.draggable = true;
+    row.dataset.role = role;
     
     const lbl = document.createElement('div');
     lbl.className = 'shift-row-label';
     lbl.textContent = role;
+    
+    const divi = document.createElement('div');
+    divi.className = 'shift-row-divider';
+    divi.textContent = '|';
     
     const sel = document.createElement('select');
     sel.className = 'shift-row-select';
@@ -1494,8 +1506,45 @@ function renderShiftRows() {
     });
     
     row.appendChild(lbl);
+    row.appendChild(divi);
     row.appendChild(sel);
     shiftRowsContainer.appendChild(row);
+
+    // Drag-and-drop functionality for reordering
+    row.addEventListener('dragstart', (e) => {
+      dragSrc = 'shift-row';
+      setTimeout(() => row.classList.add('dragging'), 0);
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      document.querySelectorAll('.shift-row').forEach(r => r.classList.remove('drag-over'));
+      dragSrc = null;
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (dragSrc !== 'shift-row') return;
+      const dragging = shiftRowsContainer.querySelector('.dragging');
+      if (dragging && dragging !== row) {
+        row.classList.add('drag-over');
+        const rect = row.getBoundingClientRect();
+        const offset = e.clientY - rect.top - rect.height / 2;
+        if (offset < 0) {
+          shiftRowsContainer.insertBefore(dragging, row);
+        } else {
+          shiftRowsContainer.insertBefore(dragging, row.nextSibling);
+        }
+      }
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (dragSrc !== 'shift-row') return;
+      row.classList.remove('drag-over');
+      
+      const newOrder = Array.from(shiftRowsContainer.children).map(r => r.dataset.role);
+      SHIFT_ROLES = newOrder;
+      updateDoc(doc(db, "settings", "global"), { shiftRolesOrder: newOrder });
+    });
   });
 }
 
