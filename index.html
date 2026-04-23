@@ -863,6 +863,32 @@ body {
   </div>
 </div>
 
+<!-- ━━━━ SYSTEM ALERT MODAL ━━━━ -->
+<div class="modal-overlay" id="sys-alert-overlay" style="z-index: 10000;">
+  <div class="modal">
+    <h3 id="sys-alert-title" style="margin-bottom: 12px;">系統通知</h3>
+    <div id="sys-alert-msg" style="font-size: .9rem; color: var(--txt); margin-bottom: 20px; line-height: 1.5;"></div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-save" id="sys-alert-ok" style="width: 100%;">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ SYSTEM PROMPT MODAL ━━━━ -->
+<div class="modal-overlay" id="sys-prompt-overlay" style="z-index: 10000;">
+  <div class="modal">
+    <h3 id="sys-prompt-title" style="margin-bottom: 12px;">請輸入</h3>
+    <div id="sys-prompt-msg" style="font-size: .9rem; color: var(--txt); margin-bottom: 8px;"></div>
+    <div class="mfield">
+      <input type="text" id="sys-prompt-input" style="width:100%;">
+    </div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-cancel" id="sys-prompt-cancel">取消</button>
+      <button class="mbtn mbtn-save" id="sys-prompt-ok">確定</button>
+    </div>
+  </div>
+</div>
+
 <!-- ━━━━ NOTE POPOVER ━━━━ -->
 <div class="note-popover" id="note-popover">
   <textarea id="np-text" placeholder="新增備註..."></textarea>
@@ -1088,6 +1114,47 @@ function sysConfirm(msg, onOk) {
   
   okBtn.addEventListener('click', handleOk);
   cancelBtn.addEventListener('click', cleanup);
+}
+
+function sysAlert(msg) {
+  $('sys-alert-msg').innerText = msg;
+  const overlay = $('sys-alert-overlay');
+  overlay.classList.add('open');
+  const okBtn = $('sys-alert-ok');
+  const cleanup = () => {
+    overlay.classList.remove('open');
+    okBtn.removeEventListener('click', cleanup);
+  };
+  okBtn.addEventListener('click', cleanup);
+}
+
+function sysPrompt(msg, defaultVal, onOk) {
+  $('sys-prompt-msg').textContent = msg;
+  const input = $('sys-prompt-input');
+  input.value = defaultVal || '';
+  const overlay = $('sys-prompt-overlay');
+  overlay.classList.add('open');
+  setTimeout(() => input.focus(), 60);
+  
+  const okBtn = $('sys-prompt-ok');
+  const cancelBtn = $('sys-prompt-cancel');
+  
+  const cleanup = () => {
+    overlay.classList.remove('open');
+    okBtn.removeEventListener('click', handleOk);
+    cancelBtn.removeEventListener('click', cleanup);
+    input.removeEventListener('keydown', handleKey);
+  };
+  const handleOk = () => {
+    const val = input.value;
+    cleanup();
+    if (onOk) onOk(val);
+  };
+  const handleKey = (e) => { if(e.key==='Enter') handleOk(); else if(e.key==='Escape') cleanup(); };
+  
+  okBtn.addEventListener('click', handleOk);
+  cancelBtn.addEventListener('click', cleanup);
+  input.addEventListener('keydown', handleKey);
 }
 
 /* ══════════════════════════════════════════════
@@ -1407,7 +1474,7 @@ addTaskBtn.addEventListener('click', () => {
         }
       } catch (err) {
         console.error(err);
-        alert("新增任務失敗，Firestore 回報錯誤: " + err.message + "\n請確保沒有權限問題，或稍後再試。");
+        sysAlert("新增任務失敗，Firestore 回報錯誤: " + err.message + "\n請確保沒有權限問題，或稍後再試。");
       }
     }
   });
@@ -1445,28 +1512,29 @@ function renderAreaList() {
     delBtn.onmouseout = () => delBtn.style.color = 'var(--txt3)';
 
     editBtn.onclick = () => {
-      const newName = prompt('請輸入新的區域名稱：', cat);
-      if (newName !== null) {
-        const trimmed = newName.trim();
-        if (trimmed && trimmed !== cat && !categories.includes(trimmed)) {
-          const newCats = [...categories];
-          newCats[index] = trimmed;
-          updateDoc(doc(db, "settings", "global"), { categories: newCats });
-          
-          const batch = writeBatch(db);
-          let needsBatch = false;
-          taskTemplates.forEach(tpl => {
-            if (tpl.category === cat) {
-              batch.update(doc(db, "templates", tpl.id), { category: trimmed });
-              needsBatch = true;
-            }
-          });
-          if (needsBatch) batch.commit();
+      sysPrompt('請輸入新的區域名稱：', cat, (newName) => {
+        if (newName !== null) {
+          const trimmed = newName.trim();
+          if (trimmed && trimmed !== cat && !categories.includes(trimmed)) {
+            const newCats = [...categories];
+            newCats[index] = trimmed;
+            updateDoc(doc(db, "settings", "global"), { categories: newCats });
+            
+            const batch = writeBatch(db);
+            let needsBatch = false;
+            taskTemplates.forEach(tpl => {
+              if (tpl.category === cat) {
+                batch.update(doc(db, "templates", tpl.id), { category: trimmed });
+                needsBatch = true;
+              }
+            });
+            if (needsBatch) batch.commit();
 
-          if (poolAreaFilter === cat) poolAreaFilter = trimmed;
-          setTimeout(renderAreaList, 100);
+            if (poolAreaFilter === cat) poolAreaFilter = trimmed;
+            setTimeout(renderAreaList, 100);
+          }
         }
-      }
+      });
     };
 
     delBtn.onclick = () => {
@@ -1519,7 +1587,7 @@ copyLastBtn.addEventListener('click', async () => {
   const prevScheduled = scheduledTasks.filter(t => t.date.startsWith(prevKey));
   
   if (prevPool.length === 0 && prevScheduled.length === 0) {
-    alert("上個月沒有任何任務可以複製！");
+    sysAlert("上個月沒有任何任務可以複製！");
     return;
   }
   
