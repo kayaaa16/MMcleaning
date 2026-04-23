@@ -739,6 +739,7 @@ body {
     <div id="tab-content-shift" class="shift-content" style="display: none;">
       <div class="shift-date-picker">
         <input type="date" id="shift-date">
+        <button class="eb-btn" id="manage-emp-btn" style="flex:0; white-space:nowrap; padding:6px 12px;">👥 管理員工</button>
       </div>
       <div id="shift-rows-container"></div>
     </div>
@@ -789,6 +790,24 @@ body {
     <div class="mfoot">
       <button class="mbtn mbtn-cancel" id="m-cancel">取消</button>
       <button class="mbtn mbtn-save" id="m-save">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ EMPLOYEE MODAL ━━━━ -->
+<div class="modal-overlay" id="emp-modal-overlay">
+  <div class="modal">
+    <h3 id="emp-modal-title">管理員工</h3>
+    <div class="mfield" style="flex-direction:row; gap:6px;">
+      <input type="text" id="new-emp-name" placeholder="輸入新員工姓名..." style="flex:1;">
+      <button class="mbtn mbtn-save" id="add-emp-btn" style="padding:4px 12px; flex-shrink:0;">新增</button>
+    </div>
+    <div class="mfield">
+      <div id="emp-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); padding:6px; border-radius:6px; background:var(--surf2);">
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-cancel" id="emp-m-close">關閉</button>
     </div>
   </div>
 </div>
@@ -847,9 +866,10 @@ let employees = [];
 let currentShiftDate = '';
 let shiftUnsubscribe = null;
 
-let SHIFT_ROLES = [
-  '11AM 淋浴間', '11AM 廚房', '12PM 拆房', '10AM 早班',
-  '11AM 午班', '12PM 晚班', '支援', '11AM 廁所'
+const SHIFT_GROUPS = [
+  ['11AM 淋浴間', '11AM 廚房', '11AM AB廁所'],
+  ['12PM 拆房', '支援'],
+  ['10AM 早班', '11AM 午班', '12PM 晚班']
 ];
 
 /* ══════════════════════════════════════════════
@@ -862,12 +882,10 @@ onSnapshot(doc(db, "settings", "global"), (dSnap) => {
       categories = data.categories;
       renderPoolAreaTabs();
     }
-    if (data.shiftRolesOrder) {
-      SHIFT_ROLES = data.shiftRolesOrder;
-    }
     if (data.employees) {
       employees = data.employees;
       if (currentShiftDate) renderShiftRows();
+      if (typeof renderEmpList === 'function') renderEmpList();
     }
   } else {
     setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [], shiftRolesOrder: SHIFT_ROLES });
@@ -1536,97 +1554,109 @@ function loadShiftData(dateStr) {
 
 function renderShiftRows() {
   shiftRowsContainer.innerHTML = '';
-  SHIFT_ROLES.forEach(role => {
-    const row = document.createElement('div');
-    row.className = 'shift-row';
-    row.draggable = true;
-    row.dataset.role = role;
-    
-    const lbl = document.createElement('div');
-    lbl.className = 'shift-row-label';
-    lbl.textContent = role;
-    
-    const divi = document.createElement('div');
-    divi.className = 'shift-row-divider';
-    divi.textContent = '|';
-    
-    const sel = document.createElement('select');
-    sel.className = 'shift-row-select';
-    sel.innerHTML = `<option value="">-- 選擇員工 --</option>`;
-    employees.forEach(emp => {
-      sel.innerHTML += `<option value="${emp}">${emp}</option>`;
-    });
-    sel.innerHTML += `<option value="__add__">＋ 新增員工</option>`;
-    
-    if (currentShiftData[role]) {
-      sel.value = currentShiftData[role];
-    }
-    
-    sel.addEventListener('change', (e) => {
-      if (e.target.value === '__add__') {
-        sel.value = currentShiftData[role] || ''; // Revert temp
-        mName.placeholder = '例：王小明';
-        openModal({
-          title: '新增員工',
-          nameLabel: '員工姓名',
-          showCat: false,
-          showCount: false,
-          onSave: ({ name }) => {
-            const newEmp = name.trim();
-            if (newEmp && !employees.includes(newEmp)) {
-              const newEmps = [...employees, newEmp];
-              updateDoc(doc(db, "settings", "global"), { employees: newEmps }).then(() => {
-                updateShiftRole(role, newEmp);
-              });
-            }
-            mName.placeholder = '例：男淋浴間清潔';
-          }
-        });
-      } else {
-        updateShiftRole(role, e.target.value);
-      }
-    });
-    
-    row.appendChild(lbl);
-    row.appendChild(divi);
-    row.appendChild(sel);
-    shiftRowsContainer.appendChild(row);
-
-    // Drag-and-drop functionality for reordering
-    row.addEventListener('dragstart', (e) => {
-      dragSrc = 'shift-row';
-      setTimeout(() => row.classList.add('dragging'), 0);
-    });
-    row.addEventListener('dragend', () => {
-      row.classList.remove('dragging');
-      document.querySelectorAll('.shift-row').forEach(r => r.classList.remove('drag-over'));
-      dragSrc = null;
-    });
-    row.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (dragSrc !== 'shift-row') return;
-      const dragging = shiftRowsContainer.querySelector('.dragging');
-      if (dragging && dragging !== row) {
-        row.classList.add('drag-over');
-        const rect = row.getBoundingClientRect();
-        const offset = e.clientY - rect.top - rect.height / 2;
-        if (offset < 0) {
-          shiftRowsContainer.insertBefore(dragging, row);
-        } else {
-          shiftRowsContainer.insertBefore(dragging, row.nextSibling);
-        }
-      }
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-    row.addEventListener('drop', (e) => {
-      e.preventDefault();
-      if (dragSrc !== 'shift-row') return;
-      row.classList.remove('drag-over');
+  SHIFT_GROUPS.forEach((group, gIdx) => {
+    group.forEach(role => {
+      const row = document.createElement('div');
+      row.className = 'shift-row';
+      row.dataset.role = role;
       
-      const newOrder = Array.from(shiftRowsContainer.children).map(r => r.dataset.role);
-      SHIFT_ROLES = newOrder;
-      updateDoc(doc(db, "settings", "global"), { shiftRolesOrder: newOrder });
+      const lbl = document.createElement('div');
+      lbl.className = 'shift-row-label';
+      lbl.textContent = role;
+      
+      const divi = document.createElement('div');
+      divi.className = 'shift-row-divider';
+      divi.textContent = '|';
+      
+      const sel = document.createElement('select');
+      sel.className = 'shift-row-select';
+      sel.innerHTML = `<option value="">-- 選擇員工 --</option>`;
+      employees.forEach(emp => {
+        sel.innerHTML += `<option value="${emp}">${emp}</option>`;
+      });
+      
+      const val = currentShiftData[role] || (role === '11AM AB廁所' ? currentShiftData['11AM 廁所'] : null);
+      if (val) {
+        sel.value = val;
+      }
+      
+      sel.addEventListener('change', (e) => {
+        updateShiftRole(role, e.target.value);
+      });
+      
+      row.appendChild(lbl);
+      row.appendChild(divi);
+      row.appendChild(sel);
+      shiftRowsContainer.appendChild(row);
     });
+    
+    if (gIdx < SHIFT_GROUPS.length - 1) {
+      const sep = document.createElement('div');
+      sep.className = 'shift-group-separator';
+      shiftRowsContainer.appendChild(sep);
+    }
+  });
+}
+
+const empModalOverlay = $('emp-modal-overlay');
+const empListEl = $('emp-list');
+const newEmpNameInput = $('new-emp-name');
+
+$('manage-emp-btn').addEventListener('click', () => {
+  if (typeof renderEmpList === 'function') renderEmpList();
+  empModalOverlay.classList.add('open');
+  setTimeout(()=>newEmpNameInput.focus(), 60);
+});
+
+$('emp-m-close').addEventListener('click', () => {
+  empModalOverlay.classList.remove('open');
+});
+
+empModalOverlay.addEventListener('click', e => { 
+  if (e.target === empModalOverlay) empModalOverlay.classList.remove('open'); 
+});
+
+$('add-emp-btn').addEventListener('click', () => {
+  const name = newEmpNameInput.value.trim();
+  if (!name) return;
+  if (!employees.includes(name)) {
+    const newEmps = [...employees, name];
+    updateDoc(doc(db, "settings", "global"), { employees: newEmps });
+  }
+  newEmpNameInput.value = '';
+  newEmpNameInput.focus();
+});
+
+newEmpNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('add-emp-btn').click(); });
+
+function renderEmpList() {
+  if (!empListEl) return;
+  empListEl.innerHTML = '';
+  if (employees.length === 0) {
+    empListEl.innerHTML = '<div style="color:var(--txt3); font-size:.8rem; padding:4px;">尚無員工，請從上方新增</div>';
+    return;
+  }
+  employees.forEach(emp => {
+    const item = document.createElement('div');
+    item.className = 'emp-item';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = emp;
+    
+    const delBtn = document.createElement('span');
+    delBtn.className = 'emp-item-del';
+    delBtn.textContent = '✕';
+    delBtn.title = '刪除員工';
+    delBtn.addEventListener('click', () => {
+      if (confirm(`確定要刪除員工「${emp}」嗎？`)) {
+        const newEmps = employees.filter(e => e !== emp);
+        updateDoc(doc(db, "settings", "global"), { employees: newEmps });
+      }
+    });
+    
+    item.appendChild(nameSpan);
+    item.appendChild(delBtn);
+    empListEl.appendChild(item);
   });
 }
 
