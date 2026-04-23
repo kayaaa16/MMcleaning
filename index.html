@@ -1220,9 +1220,7 @@ function makeAreaTabBtn(label, active, onClick) {
         const oldCat = catOf(dragData);
         if (oldCat !== label) {
           droppedOk = true;
-          sysConfirm(`確定要將「${dragData.name}」移至「${label}」分類嗎？`, () => {
-            updateDoc(doc(db, "templates", dragData.templateId), { category: label });
-          });
+          updateDoc(doc(db, "templates", dragData.templateId), { category: label });
         }
       }
     });
@@ -1440,7 +1438,19 @@ function mkDayCell(dateObj, isOther=false) {
 
   const dayTasks = scheduledTasks
     .filter(t=>t.date===ds)
-    .sort((a,b)=>(a.status==='completed'?1:0)-(b.status==='completed'?1:0));
+    .sort((a,b)=>{
+      const aDone = a.status === 'completed' ? 1 : 0;
+      const bDone = b.status === 'completed' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+
+      const catA = catOf(a), catB = catOf(b);
+      const idxA = categories.indexOf(catA), idxB = categories.indexOf(catB);
+      const sortA = idxA === -1 ? 999 : idxA;
+      const sortB = idxB === -1 ? 999 : idxB;
+      if (sortA !== sortB) return sortA - sortB;
+
+      return a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
+    });
 
   let MAX_VISIBLE = 5;
   if (typeof viewMode !== 'undefined') {
