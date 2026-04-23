@@ -747,7 +747,7 @@ body {
       <div class="task-pool" id="task-pool"></div>
       <div class="edit-actions-bar" style="flex-direction: column;">
         <div style="display:flex; gap:6px;">
-          <button class="eb-btn" id="add-area-btn">＋ 新增區域</button>
+          <button class="eb-btn" id="manage-area-btn">🗂️ 管理區域</button>
           <button class="eb-btn primary" id="add-task-btn">＋ 新增任務</button>
         </div>
         <button class="eb-btn" id="copy-last-btn" style="color:var(--txt);">📥 自上個月拷貝所有任務</button>
@@ -828,6 +828,25 @@ body {
     </div>
     <div class="mfoot">
       <button class="mbtn mbtn-cancel" id="emp-m-close">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ AREA MODAL ━━━━ -->
+<div class="modal-overlay" id="area-modal-overlay">
+  <div class="modal">
+    <h3 id="area-modal-title">管理區域</h3>
+    <div class="mfield" style="flex-direction:row; gap:6px; align-items: center;">
+      <input type="text" id="new-area-name" placeholder="輸入新區域名稱..." style="flex:1;">
+      <button class="mbtn mbtn-save" id="add-new-area-btn" style="padding:4px 12px; flex-shrink:0;">新增</button>
+    </div>
+    <div class="mfield">
+      <div style="font-size:.75rem; color:var(--txt2); font-weight:600; margin-bottom:4px;">目前區域</div>
+      <div id="area-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); padding:6px; border-radius:6px; background:var(--surf2);">
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-cancel" id="area-m-close">關閉</button>
     </div>
   </div>
 </div>
@@ -963,7 +982,7 @@ const poolAreaTabs = $('pool-area-tabs');
 const todayChips   = $('today-chips');
 const editToggleBtn= $('edit-toggle-btn');
 const addTaskBtn   = $('add-task-btn');
-const addAreaBtn   = $('add-area-btn');
+const manageAreaBtn= $('manage-area-btn');
 const copyLastBtn  = $('copy-last-btn');
 
 const mOverlay     = $('modal-overlay');
@@ -1194,7 +1213,7 @@ function mkTaskCard(task, src, showCat=false) {
       deleteDoc(doc(db, "tasks", task.id));
     });
   } else {
-    card.innerHTML = `<div class="task-name">${task.name}</div>${noteIconSvg}`;
+    card.innerHTML = `<div class="task-name"><span style="color:var(--txt3); margin-right:3px; font-weight:600; font-size:0.6rem;">[${cat}]</span>${task.name}</div>${noteIconSvg}`;
     card.addEventListener('click', (e) => {
       if(e.target.closest('.note-icon')) return;
       toggleStatus(task.id, task.status);
@@ -1394,21 +1413,59 @@ addTaskBtn.addEventListener('click', () => {
   });
 });
 
-addAreaBtn.addEventListener('click', () => {
-  mName.placeholder = '例：C棟';
-  openModal({ 
-    title: '新增分類區域', 
-    showCat: false, 
-    showCount: false,
-    onSave: ({ name }) => {
-      if (name && !categories.includes(name)) {
-        const newCats = [...categories, name];
+function renderAreaList() {
+  const listEl = $('area-list');
+  listEl.innerHTML = '';
+  if(!categories.length) {
+    listEl.innerHTML = '<div style="color:var(--txt3);font-size:.75rem;text-align:center;padding:10px;">目前尚無區域</div>';
+    return;
+  }
+  categories.forEach(cat => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--surface); border-radius:4px; border:1px solid var(--border); font-size:.75rem; color:var(--txt);';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = cat;
+    const delBtn = document.createElement('button');
+    delBtn.innerHTML = '✕';
+    delBtn.style.cssText = 'background:transparent; border:none; color:var(--txt3); cursor:pointer; font-size:.8rem; transition:color 0.2s;';
+    delBtn.onmouseover = () => delBtn.style.color = 'var(--red)';
+    delBtn.onmouseout = () => delBtn.style.color = 'var(--txt3)';
+    delBtn.onclick = () => {
+      sysConfirm(`確定要刪除「${cat}」嗎？這將會移除此分類標籤。`, () => {
+        const newCats = categories.filter(c => c !== cat);
         updateDoc(doc(db, "settings", "global"), { categories: newCats });
-        poolAreaFilter = name;
-      }
-      mName.placeholder = '例：男淋浴間清潔';
-    }
+        if (poolAreaFilter === cat) {
+            poolAreaFilter = OVERVIEW;
+            renderPoolAreaTabs();
+        }
+        setTimeout(renderAreaList, 100);
+      });
+    };
+    row.appendChild(nameSpan);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
   });
+}
+
+manageAreaBtn.addEventListener('click', () => {
+  $('new-area-name').value = '';
+  renderAreaList();
+  $('area-modal-overlay').classList.add('open');
+});
+
+$('add-new-area-btn').addEventListener('click', () => {
+  const name = $('new-area-name').value.trim();
+  if (name && !categories.includes(name)) {
+    const newCats = [...categories, name];
+    updateDoc(doc(db, "settings", "global"), { categories: newCats });
+    $('new-area-name').value = '';
+    setTimeout(renderAreaList, 100);
+  }
+});
+$('new-area-name').addEventListener('keydown', e => { if(e.key==='Enter') $('add-new-area-btn').click(); });
+
+$('area-m-close').addEventListener('click', () => {
+  $('area-modal-overlay').classList.remove('open');
 });
 
 copyLastBtn.addEventListener('click', async () => {
