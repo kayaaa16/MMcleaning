@@ -1293,12 +1293,28 @@ function renderPool() {
   let tasks = getCurMonthPool().slice();
   if (poolAreaFilter !== OVERVIEW) tasks = tasks.filter(t => catOf(t) === poolAreaFilter);
 
-  // 依照首字筆畫排列 (Sorting by stroke count in Traditional Chinese)
-  // localeCompare with 'zh-TW-u-co-stroke' efficiently sorts Chinese characters by strokes,
-  // meaning identical items (same name) will automatically group together.
-  tasks.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW-u-co-stroke'));
+  // Group tasks by templateId (or name as fallback)
+  const groupedTasksMap = new Map();
+  tasks.forEach(t => {
+    const key = t.templateId || t.name;
+    if (!groupedTasksMap.has(key)) {
+      groupedTasksMap.set(key, { count: 0, items: [] });
+    }
+    groupedTasksMap.get(key).items.push(t);
+    groupedTasksMap.get(key).count++;
+  });
 
-  if (!tasks.length) {
+  let groupedTasks = [];
+  groupedTasksMap.forEach((group) => {
+    // Pass the first item to represent the group, but inject poolGroupCount
+    let representativeTask = { ...group.items[0], poolGroupCount: group.count };
+    groupedTasks.push(representativeTask);
+  });
+
+  // 依照首字筆畫排列 (Sorting by stroke count in Traditional Chinese)
+  groupedTasks.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW-u-co-stroke'));
+
+  if (!groupedTasks.length) {
     taskPoolEl.innerHTML = `<div style="color:var(--txt3);font-size:.78rem;text-align:center;padding:20px 0 0;line-height:1.7;">
       ${poolAreaFilter===OVERVIEW?'本月任務池是空的':'此區域無任務'}<br><span style="font-size:.72rem">請點擊右上方「✎ 編輯」加入工作</span></div>`;
     return;
@@ -1306,7 +1322,7 @@ function renderPool() {
 
   if (poolAreaFilter === OVERVIEW) {
     const groups = {};
-    tasks.forEach(t => {
+    groupedTasks.forEach(t => {
       const c = catOf(t);
       if(!groups[c]) groups[c] = [];
       groups[c].push(t);
@@ -1319,7 +1335,7 @@ function renderPool() {
       items.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', true)));
     });
   } else {
-    tasks.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', false)));
+    groupedTasks.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', false)));
   }
 }
 
@@ -1341,8 +1357,13 @@ function mkTaskCard(task, src, showCat=false) {
 
   if (src === 'pool') {
     const tpl = taskTemplates.find(x => x.id === task.templateId);
+    let countHtml = '';
+    if (task.poolGroupCount > 1) {
+      countHtml = `<span style="color:var(--txt3); font-size:0.75rem; font-weight:600; margin-left:6px;">x${task.poolGroupCount}</span>`;
+    }
+    
     card.innerHTML = `
-      <div class="task-name">${task.name}</div>
+      <div class="task-name">${task.name}${countHtml}</div>
       <div class="task-cat-tag">${cat}</div>
       ${noteIconSvg}
       <div class="card-edit-btns">
