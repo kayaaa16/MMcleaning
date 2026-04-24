@@ -1763,13 +1763,15 @@ copyLastBtn.addEventListener('click', async () => {
   let opCount = 0;
   
   toAdd.forEach(t => {
-    currentBatch.set(doc(collection(db, "tasks")), { 
+    const newTask = { 
       name: t.name, 
       templateId: t.templateId, 
       monthKey: curKey, 
       date: null, 
       status: 'pending' 
-    });
+    };
+    if (t.note) newTask.note = t.note;
+    currentBatch.set(doc(collection(db, "tasks")), newTask);
     opCount++;
     if (opCount === 400) {
       batchChunks.push(currentBatch);
@@ -1815,10 +1817,21 @@ function editTemplate(id) {
       
       // Update all existing tasks that use this template
       const allTasksToUpdate = [];
+      let templateNote = null;
       Object.keys(poolTasksByMonth).forEach(m => {
-        poolTasksByMonth[m].forEach(p => { if (p.templateId===id) allTasksToUpdate.push(p.id); });
+        poolTasksByMonth[m].forEach(p => { 
+          if (p.templateId===id) {
+            allTasksToUpdate.push(p.id);
+            if (p.note) templateNote = p.note;
+          }
+        });
       });
-      scheduledTasks.forEach(s => { if (s.templateId===id) allTasksToUpdate.push(s.id); });
+      scheduledTasks.forEach(s => { 
+        if (s.templateId===id) {
+          allTasksToUpdate.push(s.id);
+          if (s.note) templateNote = s.note;
+        }
+      });
       
       allTasksToUpdate.forEach(tid => {
         currentBatch.update(doc(db, "tasks", tid), { name });
@@ -1830,7 +1843,9 @@ function editTemplate(id) {
       if (count > oldCount) {
         const curKey = fmtMonth(currentDate);
         for (let i=0; i<count-oldCount; i++) {
-          currentBatch.set(doc(collection(db, "tasks")), { name, templateId: id, monthKey: curKey, date: null, status: 'pending' });
+          const newTask = { name, templateId: id, monthKey: curKey, date: null, status: 'pending' };
+          if (templateNote) newTask.note = templateNote;
+          currentBatch.set(doc(collection(db, "tasks")), newTask);
           opCount++;
           if(opCount === 400) { batchChunks.push(currentBatch); currentBatch = writeBatch(db); opCount = 0; }
         }
