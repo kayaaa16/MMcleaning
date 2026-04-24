@@ -2110,7 +2110,7 @@ function renderShiftRows() {
     let selectedEmps = valStr ? valStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     
     const updateTriggerText = () => {
-      trigger.innerHTML = `<span>${selectedEmps.length > 0 ? selectedEmps.join(', ') : '<span style="color:var(--txt3)">-- 選擇員工 --</span>'}</span>
+      trigger.innerHTML = `<span>${selectedEmps.length > 0 ? selectedEmps.join(', ') : '<span style="color:var(--txt3)">【是誰啊】</span>'}</span>
                            <span style="color:var(--txt3);font-size:0.7rem;">▼</span>`;
     };
     updateTriggerText();
