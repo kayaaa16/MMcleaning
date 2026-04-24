@@ -1327,12 +1327,20 @@ function renderPool() {
       if(!groups[c]) groups[c] = [];
       groups[c].push(t);
     });
-    Object.entries(groups).forEach(([cat, items]) => {
+    const sortedCats = Object.keys(groups).sort((a, b) => {
+      const idxA = categories.indexOf(a);
+      const idxB = categories.indexOf(b);
+      const sortA = idxA === -1 ? 999 : idxA;
+      const sortB = idxB === -1 ? 999 : idxB;
+      if (sortA !== sortB) return sortA - sortB;
+      return a.localeCompare(b);
+    });
+    sortedCats.forEach(cat => {
       const hdr = document.createElement('div');
       hdr.className = 'pool-group-hdr';
       hdr.textContent = cat;
       taskPoolEl.appendChild(hdr);
-      items.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', true)));
+      groups[cat].forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', true)));
     });
   } else {
     groupedTasks.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', false)));
@@ -1519,17 +1527,18 @@ function mkDayCell(dateObj, isOther=false) {
   const dayTasks = scheduledTasks
     .filter(t=>t.date===ds)
     .sort((a,b)=>{
-      const aDone = a.status === 'completed' ? 1 : 0;
-      const bDone = b.status === 'completed' ? 1 : 0;
-      if (aDone !== bDone) return aDone - bDone;
-
       const catA = catOf(a), catB = catOf(b);
       const idxA = categories.indexOf(catA), idxB = categories.indexOf(catB);
       const sortA = idxA === -1 ? 999 : idxA;
       const sortB = idxB === -1 ? 999 : idxB;
       if (sortA !== sortB) return sortA - sortB;
 
-      return a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
+      const nameCmp = a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
+      if (nameCmp !== 0) return nameCmp;
+      
+      const aDone = a.status === 'completed' ? 1 : 0;
+      const bDone = b.status === 'completed' ? 1 : 0;
+      return aDone - bDone;
     });
 
   let MAX_VISIBLE = 5;
