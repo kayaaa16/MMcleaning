@@ -223,22 +223,15 @@ body {
   text-transform: uppercase;
   letter-spacing: .5px;
   color: var(--txt3);
-  padding: 7px 0 3px;
+  padding: 7px 4px 3px;
   flex-shrink: 0;
-}
-.trash-zone {
-  flex-shrink: 0;
-  margin: 6px 14px 8px;
-  padding: 9px;
-  text-align: center;
-  border: 2px dashed var(--border2);
-  border-radius: 8px;
-  color: var(--txt3);
-  font-size: .75rem;
   transition: all .2s;
-  cursor: default;
 }
-.trash-zone.drag-over { border-color: var(--blue); background: #eff6ff; color: var(--blue); }
+.pool-group-hdr.drag-over {
+  background: var(--blue);
+  color: #fff;
+  border-radius: 4px;
+}
 /* Edit-mode action bar */
 .edit-actions-bar {
   flex-shrink: 0;
@@ -721,11 +714,6 @@ body {
   .task-cat-tag {
     display: none; /* hide category tag on mobile list to save space */
   }
-  .trash-zone {
-    margin: 6px;
-    padding: 6px;
-    font-size: .7rem;
-  }
   .calendar-area {
     overflow-x: auto;
     padding: 6px;
@@ -778,6 +766,9 @@ body {
     
     <div id="tab-content-pool" style="display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
       <div class="sidebar-filters" id="pool-area-tabs"></div>
+      <div style="padding: 0 14px 8px; flex-shrink:0;">
+        <input type="text" id="pool-search-input" placeholder="🔍 搜尋任務或備註..." style="width:100%; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; background: var(--surf2);">
+      </div>
       <div class="task-pool" id="task-pool"></div>
       <div class="edit-actions-bar" style="flex-direction: column;">
         <div style="display:flex; gap:6px;">
@@ -786,7 +777,6 @@ body {
         </div>
         <button class="eb-btn" id="copy-last-btn" style="color:var(--txt);">📥 自上個月拷貝所有任務</button>
       </div>
-      <div class="trash-zone" id="trash-zone">📥 拖曳至此放回任務池</div>
     </div>
 
     <div id="tab-content-shift" style="display: none; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
@@ -1069,8 +1059,8 @@ const sidebar      = $('sidebar');
 const taskPoolEl   = $('task-pool');
 const calGrid      = $('calendar-days');
 const monthLabel   = $('month-label');
-const trashZone    = $('trash-zone');
 const poolAreaTabs = $('pool-area-tabs');
+const poolSearchInput = $('pool-search-input');
 const todayChips   = $('today-chips');
 const editToggleBtn= $('edit-toggle-btn');
 const addTaskBtn   = $('add-task-btn');
@@ -1126,6 +1116,10 @@ editToggleBtn.addEventListener('click', () => {
   sidebar.classList.toggle('is-editing', isEditing);
   editToggleBtn.classList.toggle('active', isEditing);
   editToggleBtn.textContent = isEditing ? '✓ 完成' : '✎ 編輯';
+  renderPool();
+});
+
+poolSearchInput.addEventListener('input', () => {
   renderPool();
 });
 
@@ -1360,6 +1354,11 @@ function renderPool() {
   let tasks = getCurMonthPool().slice();
   if (poolAreaFilter !== OVERVIEW) tasks = tasks.filter(t => catOf(t) === poolAreaFilter);
 
+  const searchVal = poolSearchInput ? poolSearchInput.value.trim().toLowerCase() : '';
+  if (searchVal) {
+    tasks = tasks.filter(t => t.name.toLowerCase().includes(searchVal) || (t.note && t.note.toLowerCase().includes(searchVal)));
+  }
+
   // Group tasks by templateId (or name as fallback)
   const groupedTasksMap = new Map();
   tasks.forEach(t => {
@@ -1378,8 +1377,15 @@ function renderPool() {
     groupedTasks.push(representativeTask);
   });
 
-  // 依照首字筆畫排列 (Sorting by stroke count in Traditional Chinese)
-  groupedTasks.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW-u-co-stroke'));
+  // 先依 order 排列，若無或相同則依筆畫排列
+  groupedTasks.sort((a, b) => {
+    const tplA = taskTemplates.find(x => x.id === a.templateId);
+    const tplB = taskTemplates.find(x => x.id === b.templateId);
+    const orderA = tplA && tplA.order !== undefined ? tplA.order : 999;
+    const orderB = tplB && tplB.order !== undefined ? tplB.order : 999;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
+  });
 
   if (!groupedTasks.length) {
     taskPoolEl.innerHTML = `<div style="color:var(--txt3);font-size:.78rem;text-align:center;padding:20px 0 0;line-height:1.7;">
@@ -1406,6 +1412,14 @@ function renderPool() {
       const hdr = document.createElement('div');
       hdr.className = 'pool-group-hdr';
       hdr.textContent = cat;
+      hdr.addEventListener('dragover', e => { e.preventDefault(); hdr.classList.add('drag-over'); });
+      hdr.addEventListener('dragleave', () => hdr.classList.remove('drag-over'));
+      hdr.addEventListener('drop', e => {
+        e.preventDefault(); hdr.classList.remove('drag-over');
+        if (dragData && dragSrc === 'pool') {
+          if (typeof reorderPoolTask === 'function') reorderPoolTask(dragData, cat, null, false);
+        }
+      });
       taskPoolEl.appendChild(hdr);
       groups[cat].forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', true)));
     });
@@ -1413,6 +1427,8 @@ function renderPool() {
     groupedTasks.forEach(t => taskPoolEl.appendChild(mkTaskCard(t, 'pool', false)));
   }
 }
+
+poolSearchInput.addEventListener('input', renderPool);
 
 /* ══════════════════════════════════════════════
    TASK CARD FACTORY
@@ -1492,9 +1508,45 @@ function mkTaskCard(task, src, showCat=false) {
       // Put back to pool from calendar
       updateDoc(doc(db, "tasks", task.id), { date: null });
     }
+    card.style.borderTop = '';
+    card.style.borderBottom = '';
     dragData=dragSrc=null;
     document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   });
+
+  if (src === 'pool') {
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragData || dragSrc !== 'pool') return;
+      const rect = card.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+      if (e.clientY < mid) {
+        card.style.borderTop = '3px solid var(--blue)';
+      } else {
+        card.style.borderBottom = '3px solid var(--blue)';
+      }
+    });
+    card.addEventListener('dragleave', () => {
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+    });
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+      if (dragData && dragSrc === 'pool' && dragData.templateId !== task.templateId) {
+        const rect = card.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const isAfter = e.clientY >= mid;
+        if (typeof reorderPoolTask === 'function') {
+          reorderPoolTask(dragData, catOf(task), task.templateId, isAfter);
+        }
+      }
+    });
+  }
+
   return card;
 }
 
@@ -1978,6 +2030,46 @@ function showTaskTooltip(task, cardEl) {
 
 function hideTaskTooltip() {
   if (ttEl) ttEl.classList.remove('open');
+}
+
+/* ══════════════════════════════════════════════
+   POOL REORDER LOGIC
+══════════════════════════════════════════════ */
+async function reorderPoolTask(draggedTask, targetCat, targetTplId, isAfter) {
+  if (!draggedTask.templateId) return;
+
+  // Find all templates in the target category
+  const targetTpls = taskTemplates.filter(t => t.category === targetCat).sort((a,b) => {
+    const oa = a.order !== undefined ? a.order : 999;
+    const ob = b.order !== undefined ? b.order : 999;
+    return oa - ob;
+  });
+  
+  const draggedTpl = taskTemplates.find(t => t.id === draggedTask.templateId);
+  if (!draggedTpl) return;
+  
+  const filteredTpls = targetTpls.filter(t => t.id !== draggedTask.templateId);
+  
+  let insertIdx = 0;
+  if (targetTplId) {
+    const refIdx = filteredTpls.findIndex(t => t.id === targetTplId);
+    if (refIdx !== -1) {
+      insertIdx = isAfter ? refIdx + 1 : refIdx;
+    }
+  } else {
+    insertIdx = 0;
+  }
+  
+  filteredTpls.splice(insertIdx, 0, draggedTpl);
+  
+  const batch = writeBatch(db);
+  let orderCounter = 0;
+  filteredTpls.forEach(t => {
+    batch.update(doc(db, "templates", t.id), { order: orderCounter, category: targetCat });
+    orderCounter++;
+  });
+
+  await batch.commit();
 }
 
 /* ══════════════════════════════════════════════
