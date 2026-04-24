@@ -2191,12 +2191,47 @@ function loadShiftData(dateStr) {
   });
 }
 
+let draggedMainShiftRoleIdx = null;
+
 function renderShiftRows() {
   shiftRowsContainer.innerHTML = '';
-  shiftRoles.forEach((role) => {
+  shiftRoles.forEach((role, index) => {
     const row = document.createElement('div');
     row.className = 'shift-row';
     row.dataset.role = role;
+    row.draggable = true;
+    row.style.cursor = 'grab';
+    
+    row.addEventListener('dragstart', (e) => {
+      // 防止在下拉選單內拖曳
+      if (e.target.closest('.multi-select-container')) {
+        e.preventDefault();
+        return;
+      }
+      draggedMainShiftRoleIdx = index;
+      setTimeout(() => row.style.opacity = '0.5', 0);
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      row.style.borderTop = '2px solid var(--blue)';
+    });
+    row.addEventListener('dragleave', () => {
+      row.style.borderTop = '';
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.style.borderTop = '';
+      if (draggedMainShiftRoleIdx !== null && draggedMainShiftRoleIdx !== index) {
+        const newRoles = [...shiftRoles];
+        const [removed] = newRoles.splice(draggedMainShiftRoleIdx, 1);
+        newRoles.splice(index, 0, removed);
+        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+      }
+    });
+    row.addEventListener('dragend', () => {
+      row.style.opacity = '1';
+      draggedMainShiftRoleIdx = null;
+    });
     
     const lbl = document.createElement('div');
     lbl.className = 'shift-row-label';
@@ -2280,10 +2315,7 @@ function renderShiftRoleList() {
     const row = document.createElement('div');
     row.className = 'emp-item';
     row.draggable = true;
-    
-    const dragHandle = document.createElement('span');
-    dragHandle.innerHTML = '&#9776;';
-    dragHandle.style.cssText = 'color:var(--txt3); cursor:grab; margin-right:8px; font-size:.9rem;';
+    row.style.cursor = 'grab';
     
     const nameSpan = document.createElement('span');
     nameSpan.textContent = role;
@@ -2355,7 +2387,6 @@ function renderShiftRoleList() {
     
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
-    row.appendChild(dragHandle);
     row.appendChild(nameSpan);
     row.appendChild(actions);
     shiftRoleListEl.appendChild(row);
