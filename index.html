@@ -1182,7 +1182,7 @@ function getCurMonthPool() {
 /* ══════════════════════════════════════════════
    DRAG GLOBALS
 ══════════════════════════════════════════════ */
-let dragData=null, dragSrc=null, droppedOk=false;
+let dragData=null, dragSrc=null, droppedOk=false, draggedTabIdx=null;
 
 /* ══════════════════════════════════════════════
    POOL RENDER
@@ -1204,24 +1204,83 @@ function makeAreaTabBtn(label, active, onClick) {
   btn.addEventListener('click', onClick);
 
   if (label !== '全部') {
+    btn.draggable = true;
+    
+    btn.addEventListener('dragstart', (e) => {
+      draggedTabIdx = categories.indexOf(label);
+      setTimeout(() => btn.style.opacity = '0.5', 0);
+    });
+
+    btn.addEventListener('dragend', () => {
+      btn.style.opacity = '1';
+      draggedTabIdx = null;
+      document.querySelectorAll('.area-tab').forEach(el => {
+        el.style.borderLeft = '';
+        el.style.borderRight = '';
+      });
+    });
+
     btn.addEventListener('dragover', e => {
       if (dragData && dragData.templateId && catOf(dragData) !== label) {
         e.preventDefault();
         btn.classList.add('drag-over-tab');
+      } else if (draggedTabIdx !== null) {
+        e.preventDefault();
+        const index = categories.indexOf(label);
+        if (draggedTabIdx === index) return;
+
+        const rect = btn.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        
+        document.querySelectorAll('.area-tab').forEach(el => {
+          el.style.borderLeft = '';
+          el.style.borderRight = '';
+        });
+
+        if (e.clientX < mid) {
+          btn.style.borderLeft = '3px solid var(--blue)';
+        } else {
+          btn.style.borderRight = '3px solid var(--blue)';
+        }
       }
     });
+
     btn.addEventListener('dragleave', () => {
       btn.classList.remove('drag-over-tab');
+      btn.style.borderLeft = '';
+      btn.style.borderRight = '';
     });
+
     btn.addEventListener('drop', e => {
       e.preventDefault();
       btn.classList.remove('drag-over-tab');
+      btn.style.borderLeft = '';
+      btn.style.borderRight = '';
+
       if (dragData && dragData.templateId) {
         const oldCat = catOf(dragData);
         if (oldCat !== label) {
           droppedOk = true;
           updateDoc(doc(db, "templates", dragData.templateId), { category: label });
         }
+      } else if (draggedTabIdx !== null) {
+        const index = categories.indexOf(label);
+        if (draggedTabIdx === index) return;
+        
+        const rect = btn.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        let targetIdx = index;
+        if (e.clientX > mid) targetIdx++;
+
+        const newCats = [...categories];
+        const [moved] = newCats.splice(draggedTabIdx, 1);
+        if (draggedTabIdx < targetIdx) targetIdx--;
+        newCats.splice(targetIdx, 0, moved);
+
+        updateDoc(doc(db, "settings", "global"), { categories: newCats });
+        categories = newCats;
+        renderPoolAreaTabs();
+        if (typeof renderAreaList === 'function') renderAreaList();
       }
     });
   }
