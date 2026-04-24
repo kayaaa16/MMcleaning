@@ -548,6 +548,39 @@ body {
 .mbtn-save { background: var(--blue); border: none; color: #fff; }
 .mbtn-save:hover { background: var(--blue2); }
 
+/* ━━━━━━━━━━  TOOLTIP  ━━━━━━━━━━ */
+.task-tooltip {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(15,23,42,.15);
+  padding: 10px 12px;
+  z-index: 3000;
+  display: none;
+  font-family: var(--font);
+  font-size: .8rem;
+  color: var(--txt);
+  min-width: 140px;
+  pointer-events: none;
+}
+.task-tooltip.open { display: block; animation: popIn .15s ease-out; }
+.task-tooltip .tt-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--blue);
+  border-bottom: 1px solid var(--border2);
+  padding-bottom: 4px;
+}
+.task-tooltip .tt-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.task-tooltip .tt-date-item {
+  color: var(--txt2);
+}
+
 /* ━━━━━━━━━━  NOTES POPOVER  ━━━━━━━━━━ */
 .note-icon {
   flex-shrink: 0; width: 16px; height: 16px;
@@ -756,12 +789,15 @@ body {
       <div class="trash-zone" id="trash-zone">📥 拖曳至此放回任務池</div>
     </div>
 
-    <div id="tab-content-shift" class="shift-content" style="display: none;">
-      <div class="shift-date-picker">
-        <input type="date" id="shift-date">
-        <button class="eb-btn" id="manage-emp-btn" style="flex:0; white-space:nowrap; padding:6px 12px;">👥 管理員工</button>
+    <div id="tab-content-shift" style="display: none; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
+      <div class="shift-date-picker" style="margin: 10px 14px 0;">
+        <input type="date" id="shift-date" style="flex: 1;">
       </div>
-      <div id="shift-rows-container"></div>
+      <div id="shift-rows-container" class="shift-content"></div>
+      <div class="edit-actions-bar" style="flex-direction: row; gap: 6px;">
+        <button class="eb-btn" id="manage-shift-role-btn">🗂️ 編輯項目</button>
+        <button class="eb-btn" id="manage-emp-btn">👥 管理員工</button>
+      </div>
     </div>
   </aside>
 
@@ -852,6 +888,25 @@ body {
   </div>
 </div>
 
+<!-- ━━━━ SHIFT ROLE MODAL ━━━━ -->
+<div class="modal-overlay" id="shift-role-modal-overlay">
+  <div class="modal">
+    <h3 id="shift-role-modal-title">管理班表項目</h3>
+    <div class="mfield" style="flex-direction:row; gap:6px; align-items: center;">
+      <input type="text" id="new-shift-role-name" placeholder="輸入新項目名稱..." style="flex:1;">
+      <button class="mbtn mbtn-save" id="add-new-shift-role-btn" style="padding:4px 12px; flex-shrink:0;">新增</button>
+    </div>
+    <div class="mfield">
+      <div style="font-size:.75rem; color:var(--txt2); font-weight:600; margin-bottom:4px;">目前項目</div>
+      <div id="shift-role-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); padding:6px; border-radius:6px; background:var(--surf2);">
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn mbtn-cancel" id="shift-role-m-close">關閉</button>
+    </div>
+  </div>
+</div>
+
 <!-- ━━━━ SYSTEM CONFIRM MODAL ━━━━ -->
 <div class="modal-overlay" id="sys-confirm-overlay" style="z-index: 10000;">
   <div class="modal">
@@ -888,6 +943,12 @@ body {
       <button class="mbtn mbtn-save" id="sys-prompt-ok">確定</button>
     </div>
   </div>
+</div>
+
+<!-- ━━━━ TASK TOOLTIP ━━━━ -->
+<div class="task-tooltip" id="task-tooltip">
+  <div class="tt-title" id="tt-title">排定日期</div>
+  <div class="tt-dates" id="tt-dates"></div>
 </div>
 
 <!-- ━━━━ NOTE POPOVER ━━━━ -->
@@ -941,14 +1002,13 @@ let poolTasksByMonth = {};
 let scheduledTasks   = [];
 let poolAreaFilter   = OVERVIEW;
 let employees = [];
+let shiftRoles = [
+  '11AM 淋浴間', '11AM 廚房', '11AM AB廁所',
+  '12PM 拆房', '支援',
+  '10AM 早班', '11AM 午班', '12PM 晚班'
+];
 let currentShiftDate = '';
 let shiftUnsubscribe = null;
-
-const SHIFT_GROUPS = [
-  ['11AM 淋浴間', '11AM 廚房', '11AM AB廁所'],
-  ['12PM 拆房', '支援'],
-  ['10AM 早班', '11AM 午班', '12PM 晚班']
-];
 
 /* ══════════════════════════════════════════════
    DB REALTIME LISTENERS
@@ -965,8 +1025,13 @@ onSnapshot(doc(db, "settings", "global"), (dSnap) => {
       if (currentShiftDate) renderShiftRows();
       if (typeof renderEmpList === 'function') renderEmpList();
     }
+    if (data.shiftRoles) {
+      shiftRoles = data.shiftRoles;
+      if (currentShiftDate) renderShiftRows();
+      if (typeof renderShiftRoleList === 'function') renderShiftRoleList();
+    }
   } else {
-    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [], shiftRolesOrder: SHIFT_ROLES });
+    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [], shiftRoles: shiftRoles });
   }
 });
 
@@ -1409,6 +1474,13 @@ function mkTaskCard(task, src, showCat=false) {
       if (typeof openNotePopover === 'function') openNotePopover(task, nIcon);
     });
   }
+
+  card.addEventListener('mouseenter', () => {
+    if (typeof showTaskTooltip === 'function') showTaskTooltip(task, card);
+  });
+  card.addEventListener('mouseleave', () => {
+    if (typeof hideTaskTooltip === 'function') hideTaskTooltip();
+  });
 
   card.addEventListener('dragstart', () => {
     dragData=task; dragSrc=src; droppedOk=false;
@@ -1869,6 +1941,46 @@ function editTemplate(id) {
 }
 
 /* ══════════════════════════════════════════════
+   TASK TOOLTIP LOGIC
+══════════════════════════════════════════════ */
+let ttEl = null, ttDates = null;
+
+function showTaskTooltip(task, cardEl) {
+  if (!ttEl) { ttEl = $('task-tooltip'); ttDates = $('tt-dates'); }
+  if (!task.templateId && !task.name) return;
+  
+  const scheduled = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
+                                  .filter(t => t.date)
+                                  .sort((a,b)=>a.date.localeCompare(b.date));
+  
+  if (scheduled.length === 0) {
+    ttDates.innerHTML = '<div class="tt-date-item">尚未安排日期</div>';
+  } else {
+    ttDates.innerHTML = scheduled.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
+  }
+  
+  ttEl.classList.add('open');
+  const rect = cardEl.getBoundingClientRect();
+  ttEl.style.left = `${rect.right + 10}px`;
+  ttEl.style.top = `${rect.top}px`;
+  
+  // Adjust if offscreen
+  setTimeout(() => {
+    const ttRect = ttEl.getBoundingClientRect();
+    if (ttRect.right > window.innerWidth) {
+      ttEl.style.left = `${rect.left - ttRect.width - 10}px`;
+    }
+    if (ttRect.bottom > window.innerHeight) {
+      ttEl.style.top = `${Math.max(10, window.innerHeight - ttRect.height - 10)}px`;
+    }
+  }, 0);
+}
+
+function hideTaskTooltip() {
+  if (ttEl) ttEl.classList.remove('open');
+}
+
+/* ══════════════════════════════════════════════
    NOTE POPOVER LOGIC
 ══════════════════════════════════════════════ */
 const npPopover = $('note-popover');
@@ -1972,88 +2084,161 @@ function loadShiftData(dateStr) {
 
 function renderShiftRows() {
   shiftRowsContainer.innerHTML = '';
-  SHIFT_GROUPS.forEach((group, gIdx) => {
-    group.forEach(role => {
-      const row = document.createElement('div');
-      row.className = 'shift-row';
-      row.dataset.role = role;
-      
-      const lbl = document.createElement('div');
-      lbl.className = 'shift-row-label';
-      lbl.textContent = role;
-      
-      const divi = document.createElement('div');
-      divi.className = 'shift-row-divider';
-      divi.textContent = '|';
-      
-      const container = document.createElement('div');
-      container.className = 'multi-select-container';
-      
-      const trigger = document.createElement('div');
-      trigger.className = 'multi-select-trigger';
-      
-      const dropdown = document.createElement('div');
-      dropdown.className = 'multi-select-dropdown';
-      
-      const valStr = currentShiftData[role] || (role === '11AM AB廁所' ? currentShiftData['11AM 廁所'] : "");
-      let selectedEmps = valStr ? valStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-      
-      const updateTriggerText = () => {
-        trigger.innerHTML = `<span>${selectedEmps.length > 0 ? selectedEmps.join(', ') : '<span style="color:var(--txt3)">-- 選擇員工 --</span>'}</span>
-                             <span style="color:var(--txt3);font-size:0.7rem;">▼</span>`;
-      };
-      updateTriggerText();
-      
-      trigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.querySelectorAll('.multi-select-container.open').forEach(c => {
-          if (c !== container) c.classList.remove('open');
-        });
-        container.classList.toggle('open');
+  shiftRoles.forEach((role) => {
+    const row = document.createElement('div');
+    row.className = 'shift-row';
+    row.dataset.role = role;
+    
+    const lbl = document.createElement('div');
+    lbl.className = 'shift-row-label';
+    lbl.textContent = role;
+    
+    const divi = document.createElement('div');
+    divi.className = 'shift-row-divider';
+    divi.textContent = '|';
+    
+    const container = document.createElement('div');
+    container.className = 'multi-select-container';
+    
+    const trigger = document.createElement('div');
+    trigger.className = 'multi-select-trigger';
+    
+    const dropdown = document.createElement('div');
+    dropdown.className = 'multi-select-dropdown';
+    
+    const valStr = currentShiftData[role] || (role === '11AM AB廁所' ? currentShiftData['11AM 廁所'] : "");
+    let selectedEmps = valStr ? valStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    
+    const updateTriggerText = () => {
+      trigger.innerHTML = `<span>${selectedEmps.length > 0 ? selectedEmps.join(', ') : '<span style="color:var(--txt3)">-- 選擇員工 --</span>'}</span>
+                           <span style="color:var(--txt3);font-size:0.7rem;">▼</span>`;
+    };
+    updateTriggerText();
+    
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.multi-select-container.open').forEach(c => {
+        if (c !== container) c.classList.remove('open');
       });
-      
-      employees.forEach(emp => {
-        const opt = document.createElement('div');
-        opt.className = 'multi-select-option' + (selectedEmps.includes(emp) ? ' selected' : '');
-        opt.innerHTML = `<span>${emp}</span><span>${selectedEmps.includes(emp) ? '✓' : ''}</span>`;
-        
-        opt.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (selectedEmps.includes(emp)) {
-            selectedEmps = selectedEmps.filter(e => e !== emp);
-            opt.classList.remove('selected');
-            opt.innerHTML = `<span>${emp}</span><span></span>`;
-          } else {
-            selectedEmps.push(emp);
-            opt.classList.add('selected');
-            opt.innerHTML = `<span>${emp}</span><span>✓</span>`;
-          }
-          updateTriggerText();
-          updateShiftRole(role, selectedEmps.join(', '));
-        });
-        dropdown.appendChild(opt);
-      });
-      
-      container.appendChild(trigger);
-      container.appendChild(dropdown);
-      
-      row.appendChild(lbl);
-      row.appendChild(divi);
-      row.appendChild(container);
-      shiftRowsContainer.appendChild(row);
+      container.classList.toggle('open');
     });
     
-    if (gIdx < SHIFT_GROUPS.length - 1) {
-      const sep = document.createElement('div');
-      sep.className = 'shift-group-separator';
-      shiftRowsContainer.appendChild(sep);
-    }
+    employees.forEach(emp => {
+      const opt = document.createElement('div');
+      opt.className = 'multi-select-option' + (selectedEmps.includes(emp) ? ' selected' : '');
+      opt.innerHTML = `<span>${emp}</span><span>${selectedEmps.includes(emp) ? '✓' : ''}</span>`;
+      
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (selectedEmps.includes(emp)) {
+          selectedEmps = selectedEmps.filter(e => e !== emp);
+          opt.classList.remove('selected');
+          opt.innerHTML = `<span>${emp}</span><span></span>`;
+        } else {
+          selectedEmps.push(emp);
+          opt.classList.add('selected');
+          opt.innerHTML = `<span>${emp}</span><span>✓</span>`;
+        }
+        updateTriggerText();
+        updateShiftRole(role, selectedEmps.join(', '));
+      });
+      dropdown.appendChild(opt);
+    });
+    
+    container.appendChild(trigger);
+    container.appendChild(dropdown);
+    
+    row.appendChild(lbl);
+    row.appendChild(divi);
+    row.appendChild(container);
+    shiftRowsContainer.appendChild(row);
   });
 }
 
 const empModalOverlay = $('emp-modal-overlay');
 const empListEl = $('emp-list');
 const newEmpNameInput = $('new-emp-name');
+
+// ━━━━ SHIFT ROLE MANAGEMENT ━━━━
+const shiftRoleModalOverlay = $('shift-role-modal-overlay');
+const shiftRoleListEl = $('shift-role-list');
+const newShiftRoleNameInput = $('new-shift-role-name');
+
+function renderShiftRoleList() {
+  shiftRoleListEl.innerHTML = '';
+  shiftRoles.forEach((role, index) => {
+    const row = document.createElement('div');
+    row.className = 'emp-item';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = role;
+    
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '4px';
+
+    const editBtn = document.createElement('button');
+    editBtn.innerHTML = '✏️';
+    editBtn.style.cssText = 'background:transparent; border:none; cursor:pointer; font-size:.75rem; filter: grayscale(1); transition: filter 0.2s;';
+    editBtn.onmouseover = () => editBtn.style.filter = 'grayscale(0)';
+    editBtn.onmouseout = () => editBtn.style.filter = 'grayscale(1)';
+
+    const delBtn = document.createElement('button');
+    delBtn.innerHTML = '✕';
+    delBtn.style.cssText = 'background:transparent; border:none; color:var(--txt3); cursor:pointer; font-size:.8rem; transition:color 0.2s;';
+    delBtn.onmouseover = () => delBtn.style.color = 'var(--red)';
+    delBtn.onmouseout = () => delBtn.style.color = 'var(--txt3)';
+
+    editBtn.onclick = () => {
+      sysPrompt('請輸入新的班表項目名稱：', role, (newName) => {
+        if (newName !== null) {
+          const trimmed = newName.trim();
+          if (trimmed && trimmed !== role && !shiftRoles.includes(trimmed)) {
+            const newRoles = [...shiftRoles];
+            newRoles[index] = trimmed;
+            updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+            setTimeout(renderShiftRoleList, 100);
+          }
+        }
+      });
+    };
+
+    delBtn.onclick = () => {
+      sysConfirm(`確定要刪除項目「${role}」嗎？這不會刪除過去已經排好的紀錄，但未來將無法再排此項目。`, () => {
+        const newRoles = shiftRoles.filter(r => r !== role);
+        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+        setTimeout(renderShiftRoleList, 100);
+      });
+    };
+    
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(nameSpan);
+    row.appendChild(actions);
+    shiftRoleListEl.appendChild(row);
+  });
+}
+
+$('manage-shift-role-btn').addEventListener('click', () => {
+  newShiftRoleNameInput.value = '';
+  renderShiftRoleList();
+  shiftRoleModalOverlay.classList.add('open');
+});
+
+$('add-new-shift-role-btn').addEventListener('click', () => {
+  const name = newShiftRoleNameInput.value.trim();
+  if (name && !shiftRoles.includes(name)) {
+    const newRoles = [...shiftRoles, name];
+    updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+    newShiftRoleNameInput.value = '';
+    setTimeout(renderShiftRoleList, 100);
+  }
+});
+newShiftRoleNameInput.addEventListener('keydown', e => { if(e.key==='Enter') $('add-new-shift-role-btn').click(); });
+
+$('shift-role-m-close').addEventListener('click', () => {
+  shiftRoleModalOverlay.classList.remove('open');
+});
 
 $('manage-emp-btn').addEventListener('click', () => {
   if (typeof renderEmpList === 'function') renderEmpList();
