@@ -619,6 +619,17 @@ body {
 }
 .s-tab.active { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(30,41,59,.1); }
 
+.scroll-shadow-top {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 4px 12px -4px rgba(0,0,0,0.15);
+}
+.scroll-shadow-bottom {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 -4px 12px -4px rgba(0,0,0,0.15);
+}
+
 .shift-content {
   flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 10px 14px; gap: 10px;
 }
@@ -766,11 +777,11 @@ body {
     
     <div id="tab-content-pool" style="display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
       <div class="sidebar-filters" id="pool-area-tabs"></div>
-      <div style="padding: 0 14px 8px; flex-shrink:0;">
+      <div class="scroll-shadow-top" style="padding: 0 14px 8px; flex-shrink:0; background:var(--surface);">
         <input type="text" id="pool-search-input" placeholder="🔍 搜尋任務或備註..." style="width:100%; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-family: var(--font); font-size: .85rem; color: var(--txt); outline: none; background: var(--surf2);">
       </div>
       <div class="task-pool" id="task-pool"></div>
-      <div class="edit-actions-bar" style="flex-direction: column;">
+      <div class="edit-actions-bar scroll-shadow-bottom" style="flex-direction: column; background:var(--surface);">
         <div style="display:flex; gap:6px;">
           <button class="eb-btn" id="manage-area-btn">🗂️ 管理區域</button>
           <button class="eb-btn primary" id="add-task-btn">＋ 新增任務</button>
@@ -780,11 +791,13 @@ body {
     </div>
 
     <div id="tab-content-shift" style="display: none; flex-direction:column; flex:1; min-height:0; overflow:hidden;">
-      <div class="shift-date-picker" style="margin: 10px 14px 0;">
-        <input type="date" id="shift-date" style="flex: 1;">
+      <div class="shift-date-picker scroll-shadow-top" style="margin: 0; padding: 10px 14px; background:var(--surface);">
+        <button class="nav-btn" id="prev-shift-date" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;">&#8249;</button>
+        <input type="date" id="shift-date" style="flex: 1; text-align: center;">
+        <button class="nav-btn" id="next-shift-date" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;">&#8250;</button>
       </div>
       <div id="shift-rows-container" class="shift-content"></div>
-      <div style="display: flex; flex-direction: row; gap: 6px; padding: 0 14px 10px; flex-shrink: 0;">
+      <div class="scroll-shadow-bottom" style="display: flex; flex-direction: row; gap: 6px; padding: 10px 14px; flex-shrink: 0; background:var(--surface);">
         <button class="eb-btn" id="manage-shift-role-btn">🗂️ 編輯項目</button>
         <button class="eb-btn" id="manage-emp-btn">👥 管理員工</button>
       </div>
@@ -2150,6 +2163,22 @@ shiftDatePicker.addEventListener('change', (e) => {
   }
 });
 
+$('prev-shift-date').addEventListener('click', () => {
+  if (!shiftDatePicker.value) return;
+  const d = new Date(shiftDatePicker.value);
+  d.setDate(d.getDate() - 1);
+  shiftDatePicker.value = d.toISOString().split('T')[0];
+  shiftDatePicker.dispatchEvent(new Event('change'));
+});
+
+$('next-shift-date').addEventListener('click', () => {
+  if (!shiftDatePicker.value) return;
+  const d = new Date(shiftDatePicker.value);
+  d.setDate(d.getDate() + 1);
+  shiftDatePicker.value = d.toISOString().split('T')[0];
+  shiftDatePicker.dispatchEvent(new Event('change'));
+});
+
 function loadShiftData(dateStr) {
   if (shiftUnsubscribe) shiftUnsubscribe();
   shiftUnsubscribe = onSnapshot(doc(db, "shifts", dateStr), (dSnap) => {
@@ -2243,19 +2272,52 @@ const newEmpNameInput = $('new-emp-name');
 const shiftRoleModalOverlay = $('shift-role-modal-overlay');
 const shiftRoleListEl = $('shift-role-list');
 const newShiftRoleNameInput = $('new-shift-role-name');
+let draggedShiftRoleIdx = null;
 
 function renderShiftRoleList() {
   shiftRoleListEl.innerHTML = '';
   shiftRoles.forEach((role, index) => {
     const row = document.createElement('div');
     row.className = 'emp-item';
+    row.draggable = true;
+    
+    const dragHandle = document.createElement('span');
+    dragHandle.innerHTML = '&#9776;';
+    dragHandle.style.cssText = 'color:var(--txt3); cursor:grab; margin-right:8px; font-size:.9rem;';
     
     const nameSpan = document.createElement('span');
     nameSpan.textContent = role;
+    nameSpan.style.flex = '1';
     
     const actions = document.createElement('div');
     actions.style.display = 'flex';
     actions.style.gap = '4px';
+
+    row.addEventListener('dragstart', () => {
+      draggedShiftRoleIdx = index;
+      setTimeout(() => row.style.opacity = '0.5', 0);
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      row.style.borderTop = '2px solid var(--blue)';
+    });
+    row.addEventListener('dragleave', () => {
+      row.style.borderTop = '';
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.style.borderTop = '';
+      if (draggedShiftRoleIdx !== null && draggedShiftRoleIdx !== index) {
+        const newRoles = [...shiftRoles];
+        const [removed] = newRoles.splice(draggedShiftRoleIdx, 1);
+        newRoles.splice(index, 0, removed);
+        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+      }
+    });
+    row.addEventListener('dragend', () => {
+      row.style.opacity = '1';
+      draggedShiftRoleIdx = null;
+    });
 
     const editBtn = document.createElement('button');
     editBtn.innerHTML = '✏️';
@@ -2293,6 +2355,7 @@ function renderShiftRoleList() {
     
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
+    row.appendChild(dragHandle);
     row.appendChild(nameSpan);
     row.appendChild(actions);
     shiftRoleListEl.appendChild(row);
