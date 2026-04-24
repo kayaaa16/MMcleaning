@@ -1524,13 +1524,62 @@ function renderAreaList() {
     listEl.innerHTML = '<div style="color:var(--txt3);font-size:.75rem;text-align:center;padding:10px;">目前尚無區域</div>';
     return;
   }
+
+  let draggedAreaIdx = null;
+
   categories.forEach((cat, index) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--surface); border-radius:4px; border:1px solid var(--border); font-size:.75rem; color:var(--txt);';
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:var(--surface); border-radius:4px; border:1px solid var(--border); font-size:.75rem; color:var(--txt); margin-bottom: 4px; cursor: grab;';
+    
+    row.draggable = true;
+    row.addEventListener('dragstart', (e) => {
+      draggedAreaIdx = index;
+      setTimeout(() => row.style.opacity = '0.4', 0);
+    });
+    row.addEventListener('dragend', () => {
+      row.style.opacity = '1';
+      draggedAreaIdx = null;
+      document.querySelectorAll('#area-list > div').forEach(el => { el.style.boxShadow = 'none'; });
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (draggedAreaIdx === null || draggedAreaIdx === index) return;
+      const rect = row.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      document.querySelectorAll('#area-list > div').forEach(el => { el.style.boxShadow = 'none'; });
+      if (e.clientY < mid) {
+        row.style.boxShadow = '0 -2px 0 var(--blue)';
+      } else {
+        row.style.boxShadow = '0 2px 0 var(--blue)';
+      }
+    });
+    row.addEventListener('dragleave', () => {
+      row.style.boxShadow = 'none';
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.style.boxShadow = 'none';
+      if (draggedAreaIdx === null || draggedAreaIdx === index) return;
+      
+      const rect = row.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      let targetIdx = index;
+      if (e.clientY > mid) targetIdx++; 
+
+      const newCats = [...categories];
+      const [moved] = newCats.splice(draggedAreaIdx, 1);
+      if (draggedAreaIdx < targetIdx) targetIdx--;
+      newCats.splice(targetIdx, 0, moved);
+      
+      updateDoc(doc(db, "settings", "global"), { categories: newCats });
+      categories = newCats;
+      renderAreaList();
+      renderPoolAreaTabs();
+    });
     
     const nameSpan = document.createElement('span');
-    nameSpan.textContent = cat;
-    nameSpan.style.cssText = 'flex:1; margin-right:8px;';
+    nameSpan.textContent = '≡  ' + cat;
+    nameSpan.style.cssText = 'flex:1; margin-right:8px; pointer-events: none;';
     
     const actions = document.createElement('div');
     actions.style.display = 'flex';
