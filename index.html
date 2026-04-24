@@ -1550,19 +1550,7 @@ function mkTaskCard(task, src, showCat=false) {
   return card;
 }
 
-/* ══════════════════════════════════════════════
-   TRASH ZONE
-══════════════════════════════════════════════ */
-trashZone.addEventListener('dragover', e=>{e.preventDefault();trashZone.classList.add('drag-over');});
-trashZone.addEventListener('dragleave', ()=>trashZone.classList.remove('drag-over'));
-trashZone.addEventListener('drop', e=>{
-  e.preventDefault(); trashZone.classList.remove('drag-over');
-  if (!dragData||dragSrc==='edit') return;
-  droppedOk=true;
-  if (dragSrc==='calendar') {
-    updateDoc(doc(db, "tasks", dragData.id), { date: null });
-  }
-});
+
 
 /* ══════════════════════════════════════════════
    CALENDAR
