@@ -1281,6 +1281,8 @@ function makeAreaTabBtn(label, active, onClick) {
         categories = newCats;
         renderPoolAreaTabs();
         if (typeof renderAreaList === 'function') renderAreaList();
+        renderPool();
+        renderCalendar();
       }
     });
   }
