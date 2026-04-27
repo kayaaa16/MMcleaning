@@ -780,6 +780,11 @@ body {
     min-height: 32px;
   }
 }
+.task-pool.drag-over-pool {
+  background-color: #eff6ff !important;
+  border: 2px dashed var(--blue) !important;
+  border-radius: 6px;
+}
 </style>
 </head>
 <body>
@@ -1491,6 +1496,24 @@ function renderPool() {
 
 poolSearchInput.addEventListener('input', renderPool);
 
+taskPoolEl.addEventListener('dragover', e => {
+  if (dragSrc === 'calendar') {
+    e.preventDefault();
+    taskPoolEl.classList.add('drag-over-pool');
+  }
+});
+taskPoolEl.addEventListener('dragleave', () => {
+  taskPoolEl.classList.remove('drag-over-pool');
+});
+taskPoolEl.addEventListener('drop', e => {
+  if (dragSrc === 'calendar' && dragData) {
+    e.preventDefault();
+    taskPoolEl.classList.remove('drag-over-pool');
+    droppedOk = true;
+    updateDoc(doc(db, "tasks", dragData.id), { date: null });
+  }
+});
+
 /* ══════════════════════════════════════════════
    TASK CARD FACTORY
 ══════════════════════════════════════════════ */
@@ -1565,10 +1588,6 @@ function mkTaskCard(task, src, showCat=false) {
   });
   card.addEventListener('dragend', () => {
     card.classList.remove('dragging');
-    if (!droppedOk && src==='calendar') {
-      // Put back to pool from calendar
-      updateDoc(doc(db, "tasks", task.id), { date: null });
-    }
     card.style.borderTop = '';
     card.style.borderBottom = '';
     dragData=dragSrc=null;
