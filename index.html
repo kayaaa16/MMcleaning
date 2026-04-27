@@ -555,6 +555,7 @@ body {
   font-size: .8rem;
   color: var(--txt);
   min-width: 140px;
+  max-width: 280px;
   pointer-events: none;
 }
 .task-tooltip.open { display: block; animation: popIn .15s ease-out; }
@@ -2000,16 +2001,28 @@ let ttEl = null, ttDates = null;
 
 function showTaskTooltip(task, cardEl) {
   if (!ttEl) { ttEl = $('task-tooltip'); ttDates = $('tt-dates'); }
+  const ttTitle = $('tt-title');
   if (!task.templateId && !task.name) return;
   
-  const scheduled = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
-                                  .filter(t => t.date)
-                                  .sort((a,b)=>a.date.localeCompare(b.date));
-  
-  if (scheduled.length === 0) {
-    ttDates.innerHTML = '<div class="tt-date-item">尚未安排日期</div>';
+  if (cardEl.classList.contains('c-card')) {
+    ttTitle.textContent = '備註內容';
+    if (task.note && task.note.trim() !== '') {
+      ttDates.innerHTML = '<div class="tt-date-item" style="white-space: pre-wrap; word-break: break-all;"></div>';
+      ttDates.querySelector('.tt-date-item').textContent = task.note;
+    } else {
+      ttDates.innerHTML = '<div class="tt-date-item" style="color: var(--txt3); font-style: italic;">無備註</div>';
+    }
   } else {
-    ttDates.innerHTML = scheduled.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
+    ttTitle.textContent = '排定日期';
+    const scheduled = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
+                                    .filter(t => t.date)
+                                    .sort((a,b)=>a.date.localeCompare(b.date));
+    
+    if (scheduled.length === 0) {
+      ttDates.innerHTML = '<div class="tt-date-item">尚未安排日期</div>';
+    } else {
+      ttDates.innerHTML = scheduled.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
+    }
   }
   
   ttEl.classList.add('open');
@@ -2208,6 +2221,8 @@ function renderShiftRows() {
         e.preventDefault();
         return;
       }
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', index);
       draggedMainShiftRoleIdx = index;
       setTimeout(() => row.style.opacity = '0.5', 0);
     });
@@ -2325,7 +2340,9 @@ function renderShiftRoleList() {
     actions.style.display = 'flex';
     actions.style.gap = '4px';
 
-    row.addEventListener('dragstart', () => {
+    row.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', index);
       draggedShiftRoleIdx = index;
       setTimeout(() => row.style.opacity = '0.5', 0);
     });
