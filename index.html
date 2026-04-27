@@ -680,65 +680,104 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
-/* Touch action for drag and drop polyfill */
-.task-card, .template-card {
-  touch-action: none;
-}
-
 /* Mobile Responsive Layout */
 @media (max-width: 768px) {
   .main-row {
-    flex-direction: row;
-    overflow-x: hidden;
+    flex-direction: column;
   }
   .sidebar {
-    width: 100px;
-    padding: 0;
+    width: 100%;
+    height: 40vh; /* Sidebar takes top 40% */
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
   .sidebar-head {
-    padding: 8px;
-    flex-direction: column;
+    padding: 10px 14px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
     gap: 8px;
   }
   .sidebar-title {
-    font-size: .85rem;
-    text-align: center;
+    display: none !important;
   }
   .edit-toggle-btn {
-    padding: 4px 6px;
-    font-size: .7rem;
-    width: 100%;
+    width: auto;
+    padding: 4px 10px;
+    font-size: .8rem;
     justify-content: center;
   }
   .task-pool {
-    padding: 3px 6px 4px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px 14px 10px;
+    align-content: start;
+  }
+  .pool-group-hdr {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+    padding: 4px 0;
   }
   .task-card {
-    padding: 0 4px;
+    padding: 6px 8px;
     height: auto;
-    min-height: 26px;
+    min-height: 36px;
   }
   .task-name {
-    font-size: .7rem;
+    font-size: .85rem;
     white-space: normal;
     word-break: break-all;
   }
   .task-cat-tag {
-    display: none; /* hide category tag on mobile list to save space */
+    display: none; /* Hide on mobile to save space */
   }
   .calendar-area {
     overflow-x: auto;
-    padding: 6px;
+    overflow-y: auto;
+    padding: 10px;
     flex: 1;
+    min-height: 50vh;
   }
   .cal-header {
-    min-width: 650px;
+    min-width: 700px;
   }
   .weekdays {
-    min-width: 650px;
+    min-width: 700px;
   }
   .days-grid {
-    min-width: 650px;
+    min-width: 700px;
+  }
+  /* Additional touches */
+  .today-panel {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 12px;
+  }
+  .today-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  /* Shift view in sidebar on mobile */
+  .shift-content {
+    padding: 10px;
+  }
+  .shift-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .shift-row-label {
+    min-width: auto;
+    font-size: .9rem;
+    margin-bottom: 2px;
+  }
+  .shift-row-divider {
+    display: none;
+  }
+  .multi-select-trigger {
+    min-height: 32px;
   }
 }
 </style>
@@ -965,13 +1004,21 @@ body {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/scroll-behaviour.min.js"></script>
 <script>
     // Only apply polyfill for mobile/touch-primary devices to prevent breaking desktop drag & drop
     if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
         MobileDragDrop.polyfill({
+            holdToDrag: 300,
             dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride
         });
         window.addEventListener('touchmove', function() {}, {passive: false});
+        // Prevent context menu on long press on draggable elements
+        window.addEventListener('contextmenu', function(e) {
+            if (e.target.closest('[draggable="true"]')) {
+                e.preventDefault();
+            }
+        });
     }
 </script>
 <script type="module">

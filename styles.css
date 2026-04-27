@@ -404,7 +404,6 @@ body {
 
 /* Touch action for drag and drop polyfill */
 .task-card, .template-card {
-    touch-action: none;
 }
 
 /* Mobile Responsive Layout */
