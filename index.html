@@ -1116,6 +1116,14 @@ onSnapshot(collection(db, "tasks"), (snap) => {
   renderCalendar();
 });
 
+let allShifts = {};
+onSnapshot(collection(db, "shifts"), (snap) => {
+  allShifts = {};
+  snap.forEach(d => {
+    allShifts[d.id] = d.data();
+  });
+  renderCalendar();
+});
 
 /* ══════════════════════════════════════════════
    DOM REFS
@@ -1713,10 +1721,37 @@ function mkDayCell(dateObj, isOther=false) {
   cell.className = `day-cell${isOther?' other-month':''}${isTod?' is-today':''}${wCls}`;
   cell.dataset.date = ds;
 
+  const headerDiv = document.createElement('div');
+  headerDiv.style.cssText = 'display:flex; justify-content:flex-end; align-items:center; gap:4px; width:100%; margin-bottom:1px; flex-shrink:0;';
+  
+  let peopleCount = 0;
+  if (allShifts[ds]) {
+    const shiftData = allShifts[ds];
+    const uniqueNames = new Set();
+    Object.keys(shiftData).forEach(key => {
+      const valStr = shiftData[key];
+      if (typeof valStr === 'string' && valStr.trim()) {
+        valStr.split(',').forEach(name => {
+          const trimmed = name.trim();
+          if (trimmed && trimmed !== '【是誰啊】') uniqueNames.add(trimmed);
+        });
+      }
+    });
+    peopleCount = uniqueNames.size;
+  }
+  
+  const countSpan = document.createElement('span');
+  countSpan.textContent = peopleCount;
+  countSpan.style.cssText = 'font-size:.78rem; font-weight:600; color:var(--txt3); line-height:1; padding-top:1px;';
+  
   const num = document.createElement('div');
   num.className = `day-num${isTod?' today-num':''}`;
+  num.style.marginBottom = '0';
   num.textContent = dateObj.getDate();
-  cell.appendChild(num);
+  
+  headerDiv.appendChild(countSpan);
+  headerDiv.appendChild(num);
+  cell.appendChild(headerDiv);
 
   const dayTasks = scheduledTasks
     .filter(t=>t.date===ds)
