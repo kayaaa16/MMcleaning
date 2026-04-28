@@ -193,14 +193,27 @@ function createDayCell(dateObj, isOtherMonth) {
     
     const isToday = dateStr === formatDate(today);
     
-    const dateHeader = document.createElement('div');
-    dateHeader.className = `day-date ${isToday ? 'today' : ''}`;
-    dateHeader.textContent = dateObj.getDate();
-    cell.appendChild(dateHeader);
-    
     // Render tasks for this day (sorted so completed are at bottom)
     const dayTasks = scheduledTasks.filter(t => t.date === dateStr);
     dayTasks.sort((a,b) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0));
+    
+    const dateHeader = document.createElement('div');
+    dateHeader.className = 'day-header';
+    
+    const uniqueNames = new Set(dayTasks.map(t => t.name));
+    const peopleCount = uniqueNames.size;
+    
+    const countSpan = document.createElement('span');
+    countSpan.className = `day-people-count ${peopleCount === 0 ? 'empty' : ''}`;
+    countSpan.textContent = peopleCount > 0 ? `👤 ${peopleCount}` : '';
+    dateHeader.appendChild(countSpan);
+    
+    const dateSpan = document.createElement('div');
+    dateSpan.className = `day-date ${isToday ? 'today' : ''}`;
+    dateSpan.textContent = dateObj.getDate();
+    dateHeader.appendChild(dateSpan);
+    
+    cell.appendChild(dateHeader);
     
     dayTasks.forEach(task => {
         cell.appendChild(createTaskCard(task, 'calendar'));
