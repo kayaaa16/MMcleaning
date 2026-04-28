@@ -196,24 +196,17 @@ body {
 }
 .day-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     margin-bottom: 4px;
+    gap: 6px;
     width: 100%;
 }
 
 .day-people-count {
-    font-size: 0.75rem;
+    font-size: 0.95rem;
     color: var(--text-secondary);
-    background: rgba(30, 41, 59, 0.8);
-    padding: 2px 6px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    border: 1px solid var(--border-color);
-}
-.day-people-count.empty {
-    visibility: hidden;
+    font-weight: 500;
 }
 
 .day-date {

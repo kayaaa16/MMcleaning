@@ -204,8 +204,8 @@ function createDayCell(dateObj, isOtherMonth) {
     const peopleCount = uniqueNames.size;
     
     const countSpan = document.createElement('span');
-    countSpan.className = `day-people-count ${peopleCount === 0 ? 'empty' : ''}`;
-    countSpan.textContent = peopleCount > 0 ? `👤 ${peopleCount}` : '';
+    countSpan.className = 'day-people-count';
+    countSpan.textContent = peopleCount;
     dateHeader.appendChild(countSpan);
     
     const dateSpan = document.createElement('div');
