@@ -490,6 +490,43 @@ body {
   margin-top: 1px;
 }
 
+/* ━━━━━━━━━━  DAY ZONES (1week / 2weeks views)  ━━━━━━━━━━ */
+.day-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 1px 0 2px;
+  min-height: 20px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  transition: background .15s;
+}
+.day-zone + .day-zone {
+  border-top: 1px dashed var(--border2);
+  margin-top: 2px;
+  padding-top: 3px;
+}
+.day-zone-label {
+  font-size: .58rem;
+  font-weight: 700;
+  color: var(--txt3);
+  letter-spacing: .8px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  user-select: none;
+  text-transform: uppercase;
+}
+.day-zone[data-zone="未"] .day-zone-label { color: var(--amber); }
+.day-zone[data-zone="B"]  .day-zone-label { color: #2563eb; }
+.day-zone[data-zone="P"]  .day-zone-label { color: #9333ea; }
+.day-zone[data-zone="BP"] .day-zone-label { color: var(--green); }
+.day-zone.drag-over {
+  background: #eff6ff;
+}
+.day-zone.drag-over .day-zone-label {
+  color: var(--blue);
+}
+
 /* ━━━━━━━━━━  MODAL  ━━━━━━━━━━ */
 .modal-overlay {
   position: fixed; inset: 0;
@@ -1518,7 +1555,7 @@ taskPoolEl.addEventListener('drop', e => {
     e.preventDefault();
     taskPoolEl.classList.remove('drag-over-pool');
     droppedOk = true;
-    updateDoc(doc(db, "tasks", dragData.id), { date: null });
+    updateDoc(doc(db, "tasks", dragData.id), { date: null, assignment: null });
   }
 });
 
@@ -1770,36 +1807,102 @@ function mkDayCell(dateObj, isOther=false) {
       return aDone - bDone;
     });
 
+  const useZones = (viewMode === '1week' || viewMode === '2weeks');
+
   let MAX_VISIBLE = 5;
   if (typeof viewMode !== 'undefined') {
     if (viewMode === '1week') MAX_VISIBLE = 99;
-    else if (viewMode === '2weeks') MAX_VISIBLE = 12;
+    else if (viewMode === '2weeks') MAX_VISIBLE = 24;
   }
 
-  dayTasks.slice(0, MAX_VISIBLE).forEach(t => cell.appendChild(mkTaskCard(t,'calendar')));
-  if (dayTasks.length > MAX_VISIBLE) {
-    const more = document.createElement('div');
-    more.className = 'more-chip';
-    more.textContent = `+${dayTasks.length-MAX_VISIBLE}`;
-    cell.appendChild(more);
-  }
+  if (useZones) {
+    const groups = { '未': [], 'B': [], 'P': [], 'BP': [] };
+    dayTasks.forEach(t => {
+      const a = t.assignment;
+      if (a === 'B' || a === 'P' || a === 'BP') groups[a].push(t);
+      else groups['未'].push(t);
+    });
 
-  cell.addEventListener('dragover', e=>{e.preventDefault();cell.classList.add('drag-over');});
-  cell.addEventListener('dragleave', ()=>cell.classList.remove('drag-over'));
-  cell.addEventListener('drop', e=>{
-    e.preventDefault(); cell.classList.remove('drag-over');
-    if (!dragData||dragSrc==='edit') return;
-    droppedOk=true; handleDrop(dragData,dragSrc,ds);
-  });
+    const zoneOrder = ['未', 'B', 'P', 'BP'];
+    let visibleCount = 0;
+    let truncated = 0;
+
+    zoneOrder.forEach(zoneKey => {
+      // Hide 未 zone if empty (B/P/BP always shown as drop targets)
+      if (zoneKey === '未' && groups[zoneKey].length === 0) return;
+
+      const zone = document.createElement('div');
+      zone.className = 'day-zone';
+      zone.dataset.zone = zoneKey;
+
+      const label = document.createElement('div');
+      label.className = 'day-zone-label';
+      label.textContent = zoneKey;
+      zone.appendChild(label);
+
+      groups[zoneKey].forEach(t => {
+        if (visibleCount < MAX_VISIBLE) {
+          zone.appendChild(mkTaskCard(t, 'calendar'));
+          visibleCount++;
+        } else {
+          truncated++;
+        }
+      });
+
+      const assignmentValue = zoneKey === '未' ? null : zoneKey;
+
+      zone.addEventListener('dragover', e => {
+        if (!dragData || dragSrc === 'edit') return;
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.add('drag-over');
+      });
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('drag-over');
+      });
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.remove('drag-over');
+        if (!dragData || dragSrc === 'edit') return;
+        droppedOk = true;
+        handleDrop(dragData, dragSrc, ds, assignmentValue);
+      });
+
+      cell.appendChild(zone);
+    });
+
+    if (truncated > 0) {
+      const more = document.createElement('div');
+      more.className = 'more-chip';
+      more.textContent = `+${truncated}`;
+      cell.appendChild(more);
+    }
+  } else {
+    dayTasks.slice(0, MAX_VISIBLE).forEach(t => cell.appendChild(mkTaskCard(t,'calendar')));
+    if (dayTasks.length > MAX_VISIBLE) {
+      const more = document.createElement('div');
+      more.className = 'more-chip';
+      more.textContent = `+${dayTasks.length-MAX_VISIBLE}`;
+      cell.appendChild(more);
+    }
+
+    cell.addEventListener('dragover', e=>{e.preventDefault();cell.classList.add('drag-over');});
+    cell.addEventListener('dragleave', ()=>cell.classList.remove('drag-over'));
+    cell.addEventListener('drop', e=>{
+      e.preventDefault(); cell.classList.remove('drag-over');
+      if (!dragData||dragSrc==='edit') return;
+      droppedOk=true; handleDrop(dragData,dragSrc,ds);
+    });
+  }
   return cell;
 }
 
-function handleDrop(task, src, targetDate) {
-  if (src==='pool') {
-    updateDoc(doc(db, "tasks", task.id), { date: targetDate, status: 'pending' });
-  } else if (src==='calendar') {
-    updateDoc(doc(db, "tasks", task.id), { date: targetDate });
-  }
+function handleDrop(task, src, targetDate, assignment) {
+  const update = { date: targetDate };
+  if (src === 'pool') update.status = 'pending';
+  if (assignment !== undefined) update.assignment = assignment;
+  updateDoc(doc(db, "tasks", task.id), update);
 }
 
 /* ══════════════════════════════════════════════
