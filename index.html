@@ -2220,14 +2220,28 @@ function showTaskTooltip(task, cardEl) {
     }
   } else {
     ttTitle.textContent = '排定日期';
-    const scheduled = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
-                                    .filter(t => t.date)
-                                    .sort((a,b)=>a.date.localeCompare(b.date));
-    
-    if (scheduled.length === 0) {
+    const lo = new Date(REAL_TODAY); lo.setDate(REAL_TODAY.getDate() - 21);
+    const hi = new Date(REAL_TODAY); hi.setDate(REAL_TODAY.getDate() + 21);
+
+    const all = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
+                              .filter(t => t.date)
+                              .sort((a,b)=>a.date.localeCompare(b.date));
+    const within = all.filter(t => {
+      const d = parseDate(t.date);
+      return d >= lo && d <= hi;
+    });
+    const hidden = all.length - within.length;
+
+    if (all.length === 0) {
       ttDates.innerHTML = '<div class="tt-date-item">尚未安排日期</div>';
+    } else if (within.length === 0) {
+      ttDates.innerHTML = `<div class="tt-date-item" style="color:var(--txt3);font-style:italic;">前後三週內無排定<br>(超出範圍共 ${all.length} 筆)</div>`;
     } else {
-      ttDates.innerHTML = scheduled.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
+      let html = within.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
+      if (hidden > 0) {
+        html += `<div class="tt-date-item" style="color:var(--txt3);font-size:0.7rem;border-top:1px dashed var(--border2);padding-top:3px;margin-top:3px;">⋯其他 ${hidden} 筆超出 ±3 週</div>`;
+      }
+      ttDates.innerHTML = html;
     }
   }
   
