@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>寓見青旅 · 資料備份工具</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --border: #e4e7ec;
+    --txt: #1f2937;
+    --txt2: #4b5563;
+    --txt3: #9ca3af;
+    --blue: #3b82f6;
+    --blue-dark: #2563eb;
+    --red: #ef4444;
+    --red-bg: #fef2f2;
+    --green: #10b981;
+    --green-bg: #ecfdf5;
+    --amber: #f59e0b;
+    --amber-bg: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    background: var(--bg);
+    color: var(--txt);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  header .project-badge {
+    font-size: 12px;
+    color: var(--txt3);
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  main {
+    max-width: 760px;
+    margin: 24px auto;
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card.danger {
+    border-color: #fecaca;
+    background: var(--red-bg);
+  }
+  .card.danger h2 { color: var(--red); }
+  .card .help {
+    color: var(--txt2);
+    font-size: 13px;
+    margin: 0 0 14px;
+  }
+  button {
+    background: var(--blue);
+    color: white;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--blue-dark); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.danger { background: var(--red); }
+  button.danger:hover:not(:disabled) { background: #dc2626; }
+  button.ghost {
+    background: transparent;
+    color: var(--txt2);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover:not(:disabled) { background: var(--bg); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+  }
+  .stat-box .label {
+    font-size: 12px;
+    color: var(--txt3);
+  }
+  .stat-box .value {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--txt);
+  }
+  .log {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--txt2);
+    min-height: 20px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  code {
+    background: var(--bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+  }
+  .log.ok { color: var(--green); }
+  .log.err { color: var(--red); }
+  .preview-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--txt2);
+    margin: 10px 0;
+    display: none;
+  }
+  .preview-box.show { display: block; }
+  .preview-box .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+  .preview-box .row .k { color: var(--txt3); }
+  .preview-box .row .v { color: var(--txt); font-weight: 500; }
+  .file-input-wrap {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 4px 0;
+  }
+  input[type="file"] {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 7px;
+    font-size: 13px;
+  }
+  .warn-banner {
+    background: var(--amber-bg);
+    border: 1px solid #fde68a;
+    color: #92400e;
+    padding: 10px 14px;
+    border-radius: 7px;
+    margin: 14px 0;
+    font-size: 13px;
+  }
+  .row-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  a.back-link {
+    color: var(--txt3);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  a.back-link:hover { color: var(--blue); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛟 資料備份工具</h1>
+  <span class="project-badge" id="project-badge">connecting…</span>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>📊 目前 Firestore 內容</h2>
+    <p class="help">即時讀取雲端各 collection 的文件數量，可以隨時點重新整理。</p>
+    <div class="stats-grid" id="stats">
+      <div class="stat-box"><div class="label">讀取中…</div><div class="value">⋯</div></div>
+    </div>
+    <div class="row-actions">
+      <button class="ghost" id="refresh-btn">🔄 重新整理</button>
+    </div>
+    <div class="log" id="stats-log"></div>
+  </section>
+
+  <section class="card">
+    <h2>🔧 修補：補回缺失的分類標籤</h2>
+    <p class="help">如果你發現任務卡上的分類標籤（例如「特殊」「場租AB」）還在，但側邊上方的 tab 不見了，代表 <code>settings.categories</code> 在過去被覆蓋過。按下方按鈕會掃描所有 templates 的 <code>category</code> 欄位，把不在 <code>categories</code> 陣列裡的補回去（追加在最後，**不改動既有順序**）。</p>
+    <button id="repair-cats-btn">掃描並補回</button>
+    <div class="log" id="repair-log"></div>
+  </section>
+
+  <section class="card">
+    <h2>💾 下載備份</h2>
+    <p class="help">把全部 collection（settings / templates / tasks / shifts）打包成一個 JSON 檔，存到下載資料夾。建議養成「每週手動備份一次」的習慣。</p>
+    <button id="export-btn">下載完整備份</button>
+    <div class="log" id="export-log"></div>
+  </section>
+
+  <section class="card danger">
+    <h2>♻️ 從備份還原</h2>
+    <p class="help">選一個之前下載的 JSON 檔，會用 <strong>合併模式</strong> 寫回 Firestore — 同 ID 的文件會被覆蓋，不在備份裡的文件不會被刪。</p>
+
+    <div class="file-input-wrap">
+      <input type="file" id="restore-file" accept="application/json,.json">
+    </div>
+
+    <div class="preview-box" id="restore-preview"></div>
+
+    <div class="warn-banner">
+      ⚠️ 此操作會立即寫入雲端，請先確認你選的檔案來自正確的專案、時間點也正確。建議在還原前**先按上面「下載備份」做一次當下備份**，這樣萬一還原錯了也能再還原回來。
+    </div>
+
+    <button class="danger" id="restore-btn" disabled>合併還原</button>
+    <div class="log" id="restore-log"></div>
+  </section>
+
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+import { getFirestore, collection, doc, getDocs, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBH1iogajhb9vYdn72VQVj2BhKcssjc6AI",
+  authDomain: "mmcleaning-c3042.firebaseapp.com",
+  projectId: "mmcleaning-c3042",
+  storageBucket: "mmcleaning-c3042.firebasestorage.app",
+  messagingSenderId: "644522123924",
+  appId: "1:644522123924:web:f73cac9b5613f8e9b68a81",
+  measurementId: "G-JDH9XKNP29"
+};
+
+const COLLECTIONS = ['settings', 'templates', 'tasks', 'shifts'];
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+document.getElementById('project-badge').textContent = firebaseConfig.projectId;
+
+const $ = id => document.getElementById(id);
+
+function setLog(el, text, type = '') {
+  el.textContent = text;
+  el.className = 'log' + (type ? ' ' + type : '');
+}
+
+async function loadAll() {
+  const data = {};
+  for (const collName of COLLECTIONS) {
+    const snap = await getDocs(collection(db, collName));
+    data[collName] = {};
+    snap.forEach(d => { data[collName][d.id] = d.data(); });
+  }
+  return data;
+}
+
+async function refreshStats() {
+  const statsEl = $('stats');
+  const log = $('stats-log');
+  statsEl.innerHTML = COLLECTIONS.map(c =>
+    `<div class="stat-box"><div class="label">${c}</div><div class="value" data-coll="${c}">⋯</div></div>`
+  ).join('');
+  setLog(log, '讀取中…');
+  try {
+    const data = await loadAll();
+    COLLECTIONS.forEach(c => {
+      const el = statsEl.querySelector(`[data-coll="${c}"]`);
+      if (el) el.textContent = Object.keys(data[c]).length;
+    });
+    setLog(log, `✓ 已更新（${new Date().toLocaleTimeString('zh-TW', { hour12: false })}）`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setLog(log, '讀取失敗：' + err.message, 'err');
+  }
+}
+
+$('refresh-btn').addEventListener('click', refreshStats);
+
+$('repair-cats-btn').addEventListener('click', async () => {
+  const btn = $('repair-cats-btn');
+  const log = $('repair-log');
+  btn.disabled = true;
+  setLog(log, '掃描 templates 中的 category 欄位…');
+
+  try {
+    // 1. 收集 templates 裡所有出現過的 category
+    const tplSnap = await getDocs(collection(db, 'templates'));
+    const tplCats = new Set();
+    tplSnap.forEach(d => {
+      const c = d.data().category;
+      if (typeof c === 'string' && c.trim()) tplCats.add(c.trim());
+    });
+
+    if (tplCats.size === 0) {
+      setLog(log, 'templates 裡沒有任何 category 欄位，無事可做', '');
+      btn.disabled = false;
+      return;
+    }
+
+    // 2. 用 transaction 讀取現在的 categories，比對缺哪些，把缺的補在後面
+    let added = [];
+    let finalCats = [];
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, 'settings', 'global');
+      const snap = await tx.get(ref);
+      const current = (snap.exists() ? snap.data().categories : null) || [];
+      const currentSet = new Set(current);
+      added = [...tplCats].filter(c => !currentSet.has(c));
+      if (added.length === 0) {
+        finalCats = current;
+        return;
+      }
+      finalCats = [...current, ...added];
+      tx.update(ref, { categories: finalCats });
+    });
+
+    if (added.length === 0) {
+      setLog(log, `✓ 不需要修補 — ${tplCats.size} 個 template 分類全都已在 categories 裡`, 'ok');
+    } else {
+      setLog(log,
+        `✓ 已補回 ${added.length} 個分類：${added.join('、')}\n` +
+        `現在 categories 共有 ${finalCats.length} 個：${finalCats.join('、')}`,
+        'ok');
+      await refreshStats();
+    }
+  } catch (err) {
+    console.error(err);
+    setLog(log, '修補失敗：' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('export-btn').addEventListener('click', async () => {
+  const btn = $('export-btn');
+  const log = $('export-log');
+  btn.disabled = true;
+  setLog(log, '讀取雲端資料中…');
+  try {
+    const data = await loadAll();
+    const payload = {
+      version: 1,
+      project: firebaseConfig.projectId,
+      exportedAt: new Date().toISOString(),
+      collections: data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const ts = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, 16);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mmcleaning-backup-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const totals = COLLECTIONS.map(c => `${c} ${Object.keys(data[c]).length}`).join(' · ');
+    setLog(log, `✓ 已下載 — ${totals}`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setLog(log, '匯出失敗：' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+let pendingBackup = null;
+
+$('restore-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  const preview = $('restore-preview');
+  const restoreBtn = $('restore-btn');
+  const log = $('restore-log');
+
+  if (!file) {
+    preview.classList.remove('show');
+    restoreBtn.disabled = true;
+    pendingBackup = null;
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data || !data.collections || typeof data.collections !== 'object') {
+      throw new Error('不是有效的備份檔（缺 collections 欄位）');
+    }
+
+    pendingBackup = data;
+
+    const rows = [
+      ['檔案', file.name],
+      ['備份來源專案', data.project || '(未標記)'],
+      ['備份建立時間', data.exportedAt
+        ? new Date(data.exportedAt).toLocaleString('zh-TW', { hour12: false })
+        : '(未標記)'],
+    ];
+    COLLECTIONS.forEach(c => {
+      const count = data.collections[c] ? Object.keys(data.collections[c]).length : 0;
+      rows.push([`${c} 數量`, String(count)]);
+    });
+
+    preview.innerHTML = rows.map(([k, v]) =>
+      `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`
+    ).join('');
+    preview.classList.add('show');
+
+    if (data.project && data.project !== firebaseConfig.projectId) {
+      setLog(log, `⚠️ 備份來自不同專案（${data.project}），請特別確認後再還原`, 'err');
+    } else {
+      setLog(log, '備份檔已讀取，按下方按鈕開始還原', '');
+    }
+
+    restoreBtn.disabled = false;
+  } catch (err) {
+    console.error(err);
+    preview.classList.remove('show');
+    pendingBackup = null;
+    restoreBtn.disabled = true;
+    setLog(log, '檔案讀取失敗：' + err.message, 'err');
+  }
+});
+
+$('restore-btn').addEventListener('click', async () => {
+  if (!pendingBackup) return;
+  const log = $('restore-log');
+
+  const phrase = prompt(
+    '為確認你是真的要還原，請輸入：還原\n\n' +
+    '（合併模式：同 ID 文件會被備份內容覆蓋；不在備份裡的文件不會被動。）'
+  );
+  if (phrase !== '還原') {
+    setLog(log, '已取消（沒有輸入「還原」）', '');
+    return;
+  }
+
+  const btn = $('restore-btn');
+  btn.disabled = true;
+  setLog(log, '寫入中…');
+
+  try {
+    let totalWrites = 0;
+    for (const [collName, docs] of Object.entries(pendingBackup.collections)) {
+      const docIds = Object.keys(docs);
+      for (let i = 0; i < docIds.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = docIds.slice(i, i + 400);
+        chunk.forEach(id => {
+          batch.set(doc(db, collName, id), docs[id]);
+        });
+        await batch.commit();
+        totalWrites += chunk.length;
+        setLog(log, `寫入中… 已完成 ${totalWrites} 筆`);
+      }
+    }
+    setLog(log, `✓ 還原完成，共寫入 ${totalWrites} 筆`, 'ok');
+    await refreshStats();
+  } catch (err) {
+    console.error(err);
+    setLog(log, '還原失敗：' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+refreshStats();
+</script>
+
+</body>
+</html>
