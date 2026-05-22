@@ -1067,7 +1067,7 @@ body {
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBH1iogajhb9vYdn72VQVj2BhKcssjc6AI",
@@ -1081,6 +1081,46 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+/* ══════════════════════════════════════════════
+   SAFE FIRESTORE WRITERS
+   避免「本地舊 state 整個覆蓋雲端」的競態 bug。
+   - addToSettingsArray / removeFromSettingsArray：原子 union/remove
+   - mutateSettingsArray：rename/reorder 用，transaction 從雲端讀最新版再改
+══════════════════════════════════════════════ */
+const SETTINGS_REF = () => doc(db, "settings", "global");
+
+async function addToSettingsArray(field, value) {
+  try {
+    await updateDoc(SETTINGS_REF(), { [field]: arrayUnion(value) });
+  } catch (err) {
+    console.error(`[settings/${field}] add 失敗`, err);
+    if (typeof sysAlert === 'function') sysAlert(`新增失敗：${err.message}`);
+  }
+}
+
+async function removeFromSettingsArray(field, value) {
+  try {
+    await updateDoc(SETTINGS_REF(), { [field]: arrayRemove(value) });
+  } catch (err) {
+    console.error(`[settings/${field}] remove 失敗`, err);
+    if (typeof sysAlert === 'function') sysAlert(`刪除失敗：${err.message}`);
+  }
+}
+
+async function mutateSettingsArray(field, mutator) {
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(SETTINGS_REF());
+      const current = (snap.exists() ? snap.data()[field] : null) || [];
+      const next = mutator([...current]);
+      tx.update(SETTINGS_REF(), { [field]: next });
+    });
+  } catch (err) {
+    console.error(`[settings/${field}] mutate 失敗`, err);
+    if (typeof sysAlert === 'function') sysAlert(`更新失敗：${err.message}`);
+  }
+}
 
 /* ══════════════════════════════════════════════
    STATE
@@ -1436,25 +1476,21 @@ function makeAreaTabBtn(label, active, onClick) {
           updateDoc(doc(db, "templates", dragData.templateId), { category: label });
         }
       } else if (draggedTabIdx !== null) {
-        const index = categories.indexOf(label);
-        if (draggedTabIdx === index) return;
-        
+        if (draggedTabIdx === categories.indexOf(label)) return;
+
         const rect = btn.getBoundingClientRect();
-        const mid = rect.left + rect.width / 2;
-        let targetIdx = index;
-        if (e.clientX > mid) targetIdx++;
-
-        const newCats = [...categories];
-        const [moved] = newCats.splice(draggedTabIdx, 1);
-        if (draggedTabIdx < targetIdx) targetIdx--;
-        newCats.splice(targetIdx, 0, moved);
-
-        updateDoc(doc(db, "settings", "global"), { categories: newCats });
-        categories = newCats;
-        renderPoolAreaTabs();
-        if (typeof renderAreaList === 'function') renderAreaList();
-        renderPool();
-        renderCalendar();
+        const dropAfter = e.clientX > rect.left + rect.width / 2;
+        const movedCat = categories[draggedTabIdx];
+        mutateSettingsArray('categories', arr => {
+          const idx = arr.indexOf(movedCat);
+          if (idx === -1) return arr;
+          arr.splice(idx, 1);
+          const refIdx = arr.indexOf(label);
+          let insertAt = refIdx === -1 ? arr.length : refIdx;
+          if (dropAfter) insertAt++;
+          arr.splice(insertAt, 0, movedCat);
+          return arr;
+        });
       }
     });
   }
@@ -1983,21 +2019,21 @@ function renderAreaList() {
       e.preventDefault();
       row.style.boxShadow = 'none';
       if (draggedAreaIdx === null || draggedAreaIdx === index) return;
-      
-      const rect = row.getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
-      let targetIdx = index;
-      if (e.clientY > mid) targetIdx++; 
 
-      const newCats = [...categories];
-      const [moved] = newCats.splice(draggedAreaIdx, 1);
-      if (draggedAreaIdx < targetIdx) targetIdx--;
-      newCats.splice(targetIdx, 0, moved);
-      
-      updateDoc(doc(db, "settings", "global"), { categories: newCats });
-      categories = newCats;
-      renderAreaList();
-      renderPoolAreaTabs();
+      const rect = row.getBoundingClientRect();
+      const dropAfter = e.clientY > rect.top + rect.height / 2;
+      const movedAreaCat = categories[draggedAreaIdx];
+      const refAreaCat = categories[index];
+      mutateSettingsArray('categories', arr => {
+        const i = arr.indexOf(movedAreaCat);
+        if (i === -1) return arr;
+        arr.splice(i, 1);
+        const refIdx = arr.indexOf(refAreaCat);
+        let insertAt = refIdx === -1 ? arr.length : refIdx;
+        if (dropAfter) insertAt++;
+        arr.splice(insertAt, 0, movedAreaCat);
+        return arr;
+      });
     });
     
     const nameSpan = document.createElement('span');
@@ -2025,10 +2061,8 @@ function renderAreaList() {
         if (newName !== null) {
           const trimmed = newName.trim();
           if (trimmed && trimmed !== cat && !categories.includes(trimmed)) {
-            const newCats = [...categories];
-            newCats[index] = trimmed;
-            updateDoc(doc(db, "settings", "global"), { categories: newCats });
-            
+            mutateSettingsArray('categories', arr => arr.map(c => c === cat ? trimmed : c));
+
             const batch = writeBatch(db);
             let needsBatch = false;
             taskTemplates.forEach(tpl => {
@@ -2048,8 +2082,7 @@ function renderAreaList() {
 
     delBtn.onclick = () => {
       sysConfirm(`確定要刪除「${cat}」嗎？這將會移除此分類標籤。`, () => {
-        const newCats = categories.filter(c => c !== cat);
-        updateDoc(doc(db, "settings", "global"), { categories: newCats });
+        removeFromSettingsArray('categories', cat);
         if (poolAreaFilter === cat) {
             poolAreaFilter = OVERVIEW;
             renderPoolAreaTabs();
@@ -2075,8 +2108,7 @@ manageAreaBtn.addEventListener('click', () => {
 $('add-new-area-btn').addEventListener('click', () => {
   const name = $('new-area-name').value.trim();
   if (name && !categories.includes(name)) {
-    const newCats = [...categories, name];
-    updateDoc(doc(db, "settings", "global"), { categories: newCats });
+    addToSettingsArray('categories', name);
     $('new-area-name').value = '';
     setTimeout(renderAreaList, 100);
   }
@@ -2338,9 +2370,44 @@ $('np-cancel').addEventListener('click', () => {
   currentNoteTaskId = null;
 });
 
-$('np-save').addEventListener('click', () => {
+$('np-save').addEventListener('click', async () => {
   if (currentNoteTaskId) {
-    updateDoc(doc(db, "tasks", currentNoteTaskId), { note: npText.value });
+    const noteVal = npText.value;
+
+    // Find the source task to determine templateId / name
+    let srcTask = scheduledTasks.find(t => t.id === currentNoteTaskId);
+    if (!srcTask) {
+      for (const mk of Object.keys(poolTasksByMonth)) {
+        const found = poolTasksByMonth[mk].find(t => t.id === currentNoteTaskId);
+        if (found) { srcTask = found; break; }
+      }
+    }
+
+    // Collect all task ids that should share this note
+    const idsToUpdate = new Set([currentNoteTaskId]);
+    if (srcTask) {
+      const sameTask = (t) => srcTask.templateId
+        ? t.templateId === srcTask.templateId
+        : (!t.templateId && t.name === srcTask.name);
+
+      scheduledTasks.forEach(t => { if (sameTask(t)) idsToUpdate.add(t.id); });
+      Object.keys(poolTasksByMonth).forEach(mk => {
+        poolTasksByMonth[mk].forEach(t => { if (sameTask(t)) idsToUpdate.add(t.id); });
+      });
+    }
+
+    // Batch update — chunk every 400 ops to stay under Firestore's 500 limit
+    const ids = Array.from(idsToUpdate);
+    const batches = [];
+    let batch = writeBatch(db);
+    let opCount = 0;
+    ids.forEach(id => {
+      batch.update(doc(db, "tasks", id), { note: noteVal });
+      opCount++;
+      if (opCount === 400) { batches.push(batch); batch = writeBatch(db); opCount = 0; }
+    });
+    if (opCount > 0) batches.push(batch);
+    for (const b of batches) await b.commit();
   }
   npPopover.classList.remove('open');
   currentNoteTaskId = null;
@@ -2457,17 +2524,23 @@ function renderShiftRows() {
       e.preventDefault();
       row.style.borderTop = '';
       if (draggedMainShiftRoleIdx !== null && draggedMainShiftRoleIdx !== index) {
-        const newRoles = [...shiftRoles];
-        const [removed] = newRoles.splice(draggedMainShiftRoleIdx, 1);
-        newRoles.splice(index, 0, removed);
-        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+        const movedRole = shiftRoles[draggedMainShiftRoleIdx];
+        const refRole = shiftRoles[index];
+        mutateSettingsArray('shiftRoles', arr => {
+          const i = arr.indexOf(movedRole);
+          if (i === -1) return arr;
+          arr.splice(i, 1);
+          const refIdx = arr.indexOf(refRole);
+          arr.splice(refIdx === -1 ? arr.length : refIdx, 0, movedRole);
+          return arr;
+        });
       }
     });
     row.addEventListener('dragend', () => {
       row.style.opacity = '1';
       draggedMainShiftRoleIdx = null;
     });
-    
+
     const lbl = document.createElement('div');
     lbl.className = 'shift-row-label';
     lbl.textContent = role;
@@ -2577,10 +2650,16 @@ function renderShiftRoleList() {
       e.preventDefault();
       row.style.borderTop = '';
       if (draggedShiftRoleIdx !== null && draggedShiftRoleIdx !== index) {
-        const newRoles = [...shiftRoles];
-        const [removed] = newRoles.splice(draggedShiftRoleIdx, 1);
-        newRoles.splice(index, 0, removed);
-        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+        const movedRole = shiftRoles[draggedShiftRoleIdx];
+        const refRole = shiftRoles[index];
+        mutateSettingsArray('shiftRoles', arr => {
+          const i = arr.indexOf(movedRole);
+          if (i === -1) return arr;
+          arr.splice(i, 1);
+          const refIdx = arr.indexOf(refRole);
+          arr.splice(refIdx === -1 ? arr.length : refIdx, 0, movedRole);
+          return arr;
+        });
       }
     });
     row.addEventListener('dragend', () => {
@@ -2605,9 +2684,7 @@ function renderShiftRoleList() {
         if (newName !== null) {
           const trimmed = newName.trim();
           if (trimmed && trimmed !== role && !shiftRoles.includes(trimmed)) {
-            const newRoles = [...shiftRoles];
-            newRoles[index] = trimmed;
-            updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+            mutateSettingsArray('shiftRoles', arr => arr.map(r => r === role ? trimmed : r));
             setTimeout(renderShiftRoleList, 100);
           }
         }
@@ -2616,8 +2693,7 @@ function renderShiftRoleList() {
 
     delBtn.onclick = () => {
       sysConfirm(`確定要刪除項目「${role}」嗎？這不會刪除過去已經排好的紀錄，但未來將無法再排此項目。`, () => {
-        const newRoles = shiftRoles.filter(r => r !== role);
-        updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+        removeFromSettingsArray('shiftRoles', role);
         setTimeout(renderShiftRoleList, 100);
       });
     };
@@ -2639,8 +2715,7 @@ $('manage-shift-role-btn').addEventListener('click', () => {
 $('add-new-shift-role-btn').addEventListener('click', () => {
   const name = newShiftRoleNameInput.value.trim();
   if (name && !shiftRoles.includes(name)) {
-    const newRoles = [...shiftRoles, name];
-    updateDoc(doc(db, "settings", "global"), { shiftRoles: newRoles });
+    addToSettingsArray('shiftRoles', name);
     newShiftRoleNameInput.value = '';
     setTimeout(renderShiftRoleList, 100);
   }
@@ -2669,8 +2744,7 @@ $('add-emp-btn').addEventListener('click', () => {
   const name = newEmpNameInput.value.trim();
   if (!name) return;
   if (!employees.includes(name)) {
-    const newEmps = [...employees, name];
-    updateDoc(doc(db, "settings", "global"), { employees: newEmps });
+    addToSettingsArray('employees', name);
   }
   newEmpNameInput.value = '';
   newEmpNameInput.focus();
@@ -2698,8 +2772,7 @@ function renderEmpList() {
     delBtn.title = '刪除員工';
     delBtn.addEventListener('click', () => {
       sysConfirm(`確定要刪除員工「${emp}」嗎？`, () => {
-        const newEmps = employees.filter(e => e !== emp);
-        updateDoc(doc(db, "settings", "global"), { employees: newEmps });
+        removeFromSettingsArray('employees', emp);
       });
     });
     
