@@ -1,0 +1,37 @@
+// 寓見青旅清潔安排表 - Firestore Security Rules
+//
+// 部署方式（兩種任選）：
+// (A) Firebase Console 直接貼上：
+//     1) 打開 https://console.firebase.google.com/project/mmcleaning-c3042/firestore/rules
+//     2) 把這個檔案全部內容貼進編輯器
+//     3) 按右上「發布」
+//
+// (B) Firebase CLI：
+//     1) npm install -g firebase-tools（如未安裝）
+//     2) firebase login
+//     3) firebase deploy --only firestore:rules --project mmcleaning-c3042
+//
+// 規則邏輯：
+// - 只有白名單 email 的已登入 Google 帳號可讀寫所有 collection
+// - service account（admin SDK）始終 bypass rules，所以我的修補腳本不受影響
+// - 沒登入或不是白名單 email 一律拒絕——徹底擋下匿名爬蟲與惡意覆蓋
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAllowedUser() {
+      return request.auth != null
+          && request.auth.token.email_verified == true
+          && request.auth.token.email in [
+               'fankiki911116@gmail.com',
+               'meetingmates.hostel@gmail.com'
+             ];
+    }
+
+    // 所有集合：只有白名單 email 可讀寫
+    match /{document=**} {
+      allow read, write: if isAllowedUser();
+    }
+  }
+}
