@@ -1,11 +1,29 @@
 // 用 service account JWT + Firestore REST API 抓全部資料
 // 寫到 backup-out/backup-<ts>.json 與 backup-out/latest.json
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createSign } from 'node:crypto';
 import https from 'node:https';
 
+console.log('[backup] script start');
+console.log('[backup] node version:', process.version);
+console.log('[backup] GOOGLE_APPLICATION_CREDENTIALS =', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+console.log('[backup] RUNNER_TEMP =', process.env.RUNNER_TEMP);
+
 const SA_PATH = process.env.GOOGLE_APPLICATION_CREDENTIALS || (process.env.RUNNER_TEMP + '/sa.json');
-const SA = JSON.parse(readFileSync(SA_PATH, 'utf8'));
+console.log('[backup] SA_PATH =', SA_PATH);
+console.log('[backup] SA file exists?', existsSync(SA_PATH));
+
+let SA;
+try {
+  const raw = readFileSync(SA_PATH, 'utf8');
+  console.log('[backup] SA file size:', raw.length, 'bytes');
+  SA = JSON.parse(raw);
+  console.log('[backup] SA parsed; project_id =', SA.project_id);
+} catch (err) {
+  console.error('[backup] ✗ 讀取/解析 SA 失敗:', err.message);
+  process.exit(1);
+}
+
 const PROJECT = SA.project_id;
 const COLLECTIONS = ['settings', 'templates', 'tasks', 'shifts'];
 
