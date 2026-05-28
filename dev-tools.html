@@ -207,6 +207,19 @@
 <main>
 
   <section class="card">
+    <h2>👥 settings/global 內容（員工 / 班表項目 / 區域）</h2>
+    <p class="help">直接讀取 <code>settings/global</code> 文件，顯示目前雲端有沒有員工名單。如果這裡是空的，主程式還原按鈕（從本機備份還原）才有意義。</p>
+    <div class="row-actions">
+      <button id="dump-settings-btn">查看雲端 settings</button>
+      <button class="ghost" id="dump-local-backup-btn">查看本機備份 (localStorage)</button>
+    </div>
+    <div class="log" id="dump-log" style="white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;"></div>
+    <div class="warn-banner" style="margin-top:10px;">
+      ⚠️ 若雲端是空的、本機備份也是空的 → 員工名單已遺失。請從之前「下載備份」匯出的 JSON 檔，用下方「合併還原」復原。
+    </div>
+  </section>
+
+  <section class="card">
     <h2>📊 目前 Firestore 內容</h2>
     <p class="help">即時讀取雲端各 collection 的文件數量，可以隨時點重新整理。</p>
     <div class="stats-grid" id="stats">
@@ -233,6 +246,13 @@
   </section>
 
   <section class="card danger">
+    <h2>🧹 立即清理 60 天前舊資料</h2>
+    <p class="help">主程式打開時會自動執行（每天一次）。這顆按鈕是當你想立刻釋放配額時用的：刪除 60 天前的 <code>tasks</code> 與 <code>shifts</code> 文件，員工 / 班表項目 / 區域 / 任務範本都不會被動。</p>
+    <button class="danger" id="cleanup-old-btn">立即清理 60 天前資料</button>
+    <div class="log" id="cleanup-log"></div>
+  </section>
+
+  <section class="card danger">
     <h2>♻️ 從備份還原</h2>
     <p class="help">選一個之前下載的 JSON 檔，會用 <strong>合併模式</strong> 寫回 Firestore — 同 ID 的文件會被覆蓋，不在備份裡的文件不會被刪。</p>
 
@@ -254,7 +274,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-import { getFirestore, collection, doc, getDocs, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, writeBatch, runTransaction, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBH1iogajhb9vYdn72VQVj2BhKcssjc6AI",
@@ -311,6 +331,125 @@ async function refreshStats() {
 }
 
 $('refresh-btn').addEventListener('click', refreshStats);
+
+$('dump-settings-btn').addEventListener('click', async () => {
+  const log = $('dump-log');
+  setLog(log, '讀取 settings/global 中…');
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'global'));
+    if (!snap.exists()) {
+      setLog(log, '⚠️ settings/global 文件不存在（連空的都沒有）。', 'err');
+      return;
+    }
+    const data = snap.data();
+    const employees = Array.isArray(data.employees) ? data.employees : [];
+    const shiftRoles = Array.isArray(data.shiftRoles) ? data.shiftRoles : [];
+    const categories = Array.isArray(data.categories) ? data.categories : [];
+    const out = [
+      `--- 雲端 settings/global ---`,
+      `employees (${employees.length} 筆):`,
+      employees.length ? '  ' + employees.join('、') : '  ⚠️ 空的',
+      ``,
+      `shiftRoles (${shiftRoles.length} 筆):`,
+      shiftRoles.length ? '  ' + shiftRoles.join('、') : '  ⚠️ 空的',
+      ``,
+      `categories (${categories.length} 筆):`,
+      categories.length ? '  ' + categories.join('、') : '  ⚠️ 空的',
+      ``,
+      `原始 JSON：`,
+      JSON.stringify(data, null, 2)
+    ].join('\n');
+    setLog(log, out, employees.length ? 'ok' : 'err');
+  } catch (err) {
+    console.error(err);
+    setLog(log, '讀取失敗：' + err.message, 'err');
+  }
+});
+
+$('cleanup-old-btn').addEventListener('click', async () => {
+  const btn = $('cleanup-old-btn');
+  const log = $('cleanup-log');
+  if (!confirm('將刪除 60 天前所有 tasks 與 shifts 文件，確定？')) return;
+  btn.disabled = true;
+  setLog(log, '掃描中…');
+  try {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 60);
+    const pad = n => String(n).padStart(2,'0');
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const cutoffStr = fmt(cutoff);
+    const cutoffMonth = cutoffStr.slice(0,7);
+
+    setLog(log, `cutoff = ${cutoffStr}\n讀取 tasks…`);
+    const tasksSnap = await getDocs(collection(db, 'tasks'));
+    const targets = [];
+    tasksSnap.forEach(d => {
+      const data = d.data();
+      if (data.date && data.date < cutoffStr) targets.push({ coll: 'tasks', id: d.id });
+      else if (!data.date && data.monthKey && data.monthKey < cutoffMonth) targets.push({ coll: 'tasks', id: d.id });
+    });
+
+    setLog(log, `tasks 找到 ${targets.length} 筆要刪\n讀取 shifts…`);
+    const shiftsSnap = await getDocs(collection(db, 'shifts'));
+    shiftsSnap.forEach(d => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d.id) && d.id < cutoffStr) {
+        targets.push({ coll: 'shifts', id: d.id });
+      }
+    });
+
+    if (targets.length === 0) {
+      setLog(log, '✓ 沒有需要清理的舊資料', 'ok');
+      return;
+    }
+
+    setLog(log, `共 ${targets.length} 筆要刪除，開始批次寫入…`);
+    const CHUNK = 400;
+    for (let i = 0; i < targets.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      targets.slice(i, i + CHUNK).forEach(({ coll, id }) => batch.delete(doc(db, coll, id)));
+      await batch.commit();
+    }
+    setLog(log, `✓ 已刪除 ${targets.length} 筆 ${cutoffStr} 前的資料`, 'ok');
+    await refreshStats();
+  } catch (err) {
+    console.error(err);
+    setLog(log, '清理失敗：' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('dump-local-backup-btn').addEventListener('click', () => {
+  const log = $('dump-log');
+  try {
+    const raw = localStorage.getItem('hcc-settings-backup-v1');
+    if (!raw) {
+      setLog(log, '⚠️ 本機沒有備份（localStorage 是空的）。\n\n注意：本機備份是「主程式 index.html」自動寫入的，dev-tools.html 是不同網域 / 不同路徑時 localStorage 不通用。請改在主程式頁面按 F12 → Console → 輸入：\n  JSON.parse(localStorage.getItem("hcc-settings-backup-v1"))\n查看。', 'err');
+      return;
+    }
+    const data = JSON.parse(raw);
+    const employees = Array.isArray(data.employees) ? data.employees : [];
+    const shiftRoles = Array.isArray(data.shiftRoles) ? data.shiftRoles : [];
+    const categories = Array.isArray(data.categories) ? data.categories : [];
+    const savedAt = data.savedAt ? new Date(data.savedAt).toLocaleString('zh-TW', { hour12: false }) : '未知時間';
+    const out = [
+      `--- 本機備份 (localStorage) ---`,
+      `備份時間：${savedAt}`,
+      ``,
+      `employees (${employees.length} 筆):`,
+      employees.length ? '  ' + employees.join('、') : '  ⚠️ 空的',
+      ``,
+      `shiftRoles (${shiftRoles.length} 筆):`,
+      shiftRoles.length ? '  ' + shiftRoles.join('、') : '  ⚠️ 空的',
+      ``,
+      `categories (${categories.length} 筆):`,
+      categories.length ? '  ' + categories.join('、') : '  ⚠️ 空的'
+    ].join('\n');
+    setLog(log, out, employees.length ? 'ok' : 'err');
+  } catch (err) {
+    setLog(log, '讀取失敗：' + err.message, 'err');
+  }
+});
 
 $('repair-cats-btn').addEventListener('click', async () => {
   const btn = $('repair-cats-btn');

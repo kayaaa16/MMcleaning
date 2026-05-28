@@ -1281,6 +1281,81 @@ async function restoreSettingsFromBackup() {
   }
 }
 
+/* ══════════════════════════════════════════════
+   60 天前舊資料自動清理
+   - tasks 集合：date < cutoff 的整筆刪
+   - shifts 集合：document id（日期字串） < cutoff 的整筆刪
+   - pool tasks（無 date 但有 monthKey）：monthKey 月份 < cutoff 月份就刪
+   - 同一台瀏覽器一天最多跑一次（localStorage 鎖）
+   - 用 writeBatch 一次最多 400 筆，避免單次寫入過大
+══════════════════════════════════════════════ */
+const CLEANUP_DAYS = 60;
+const CLEANUP_LOCK_KEY = 'hcc-last-cleanup-date';
+
+async function cleanupOldData() {
+  const todayKey = fmtDate(REAL_TODAY);
+  if (localStorage.getItem(CLEANUP_LOCK_KEY) === todayKey) {
+    console.log('[cleanup] 今天已清理過，跳過');
+    return;
+  }
+
+  const cutoffDate = new Date(REAL_TODAY);
+  cutoffDate.setDate(cutoffDate.getDate() - CLEANUP_DAYS);
+  const cutoffStr = fmtDate(cutoffDate);
+  const cutoffMonthKey = cutoffStr.slice(0, 7);
+
+  const targets = [];
+  scheduledTasks.forEach(t => {
+    if (t.date && t.date < cutoffStr) targets.push({ coll: 'tasks', id: t.id });
+  });
+  Object.keys(poolTasksByMonth).forEach(mk => {
+    if (mk && mk < cutoffMonthKey) {
+      poolTasksByMonth[mk].forEach(t => targets.push({ coll: 'tasks', id: t.id }));
+    }
+  });
+  Object.keys(allShifts).forEach(ds => {
+    // shifts doc id 是 YYYY-MM-DD 字串
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && ds < cutoffStr) {
+      targets.push({ coll: 'shifts', id: ds });
+    }
+  });
+
+  if (targets.length === 0) {
+    console.log(`[cleanup] 沒有 ${CLEANUP_DAYS} 天前的資料需要清理`);
+    localStorage.setItem(CLEANUP_LOCK_KEY, todayKey);
+    return;
+  }
+
+  console.log(`[cleanup] 找到 ${targets.length} 筆 ${cutoffStr} 之前的資料，開始批次刪除…`);
+  try {
+    const CHUNK = 400; // Firestore batch 上限 500，留餘裕
+    for (let i = 0; i < targets.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      targets.slice(i, i + CHUNK).forEach(({ coll, id }) => {
+        batch.delete(doc(db, coll, id));
+      });
+      await batch.commit();
+      console.log(`[cleanup] 已刪除 ${Math.min(i + CHUNK, targets.length)}/${targets.length}`);
+    }
+    localStorage.setItem(CLEANUP_LOCK_KEY, todayKey);
+    console.log(`[cleanup] ✓ 完成，共刪除 ${targets.length} 筆`);
+  } catch (err) {
+    console.error('[cleanup] 失敗', err);
+    // 不設 lock，下次開啟會再試
+  }
+}
+
+// 在初次 tasks + shifts snapshot 都到齊後，延遲 8 秒觸發
+// （讓使用者能先看到資料，也避免和初次渲染搶資源）
+let _cleanupScheduled = false;
+let _tasksLoaded = false;
+let _shiftsLoaded = false;
+function maybeScheduleCleanup() {
+  if (_cleanupScheduled || !_tasksLoaded || !_shiftsLoaded) return;
+  _cleanupScheduled = true;
+  setTimeout(() => cleanupOldData(), 8000);
+}
+
 async function safeInitSettingsIfMissing() {
   // 只在雲端真的沒有 doc 時才建立；用 transaction 確保不會覆蓋同時被建立的資料。
   try {
@@ -1386,6 +1461,8 @@ onSnapshot(collection(db, "tasks"), (snap) => {
   scheduleRenderToday();
   scheduleRenderPool();
   scheduleRenderCalendar();
+  _tasksLoaded = true;
+  maybeScheduleCleanup();
 });
 
 let allShifts = {};
@@ -1395,6 +1472,8 @@ onSnapshot(collection(db, "shifts"), (snap) => {
     allShifts[d.id] = d.data();
   });
   scheduleRenderCalendar();
+  _shiftsLoaded = true;
+  maybeScheduleCleanup();
 });
 
 /* ══════════════════════════════════════════════
@@ -2448,23 +2527,42 @@ function showTaskTooltip(task, cardEl) {
     const lo = new Date(REAL_TODAY); lo.setDate(REAL_TODAY.getDate() - 21);
     const hi = new Date(REAL_TODAY); hi.setDate(REAL_TODAY.getDate() + 21);
 
-    const all = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
-                              .filter(t => t.date)
-                              .sort((a,b)=>a.date.localeCompare(b.date));
-    const within = all.filter(t => {
-      const d = parseDate(t.date);
+    const matches = scheduledTasks.filter(t => (t.templateId && t.templateId === task.templateId) || (!t.templateId && t.name === task.name))
+                                  .filter(t => t.date);
+
+    // 同一天合併成一筆：保留一個日期，記錄當天總數與已完成數
+    const byDate = new Map();
+    matches.forEach(t => {
+      const entry = byDate.get(t.date) || { date: t.date, total: 0, done: 0 };
+      entry.total++;
+      if (t.status === 'completed') entry.done++;
+      byDate.set(t.date, entry);
+    });
+    const allUnique = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const withinUnique = allUnique.filter(e => {
+      const d = parseDate(e.date);
       return d >= lo && d <= hi;
     });
-    const hidden = all.length - within.length;
+    const hiddenDates = allUnique.length - withinUnique.length;
 
-    if (all.length === 0) {
+    if (allUnique.length === 0) {
       ttDates.innerHTML = '<div class="tt-date-item">尚未安排日期</div>';
-    } else if (within.length === 0) {
-      ttDates.innerHTML = `<div class="tt-date-item" style="color:var(--txt3);font-style:italic;">前後三週內無排定<br>(超出範圍共 ${all.length} 筆)</div>`;
+    } else if (withinUnique.length === 0) {
+      ttDates.innerHTML = `<div class="tt-date-item" style="color:var(--txt3);font-style:italic;">前後三週內無排定<br>(超出範圍共 ${allUnique.length} 天)</div>`;
     } else {
-      let html = within.map(t => `<div class="tt-date-item">${t.date}${t.status==='completed'?' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>':''}</div>`).join('');
-      if (hidden > 0) {
-        html += `<div class="tt-date-item" style="color:var(--txt3);font-size:0.7rem;border-top:1px dashed var(--border2);padding-top:3px;margin-top:3px;">⋯其他 ${hidden} 筆超出 ±3 週</div>`;
+      let html = withinUnique.map(e => {
+        const fullyDone = e.done === e.total;
+        const partial = e.done > 0 && e.done < e.total;
+        const countTag = e.total > 1 ? ` <span style="color:var(--txt3);font-size:0.7rem;margin-left:4px;">x${e.total}</span>` : '';
+        const mark = fullyDone
+          ? ' <span style="color:var(--green);font-weight:bold;margin-left:4px;">✓</span>'
+          : partial
+            ? ` <span style="color:var(--txt3);font-size:0.7rem;margin-left:4px;">${e.done}/${e.total}</span>`
+            : '';
+        return `<div class="tt-date-item">${e.date}${countTag}${mark}</div>`;
+      }).join('');
+      if (hiddenDates > 0) {
+        html += `<div class="tt-date-item" style="color:var(--txt3);font-size:0.7rem;border-top:1px dashed var(--border2);padding-top:3px;margin-top:3px;">⋯其他 ${hiddenDates} 天超出 ±3 週</div>`;
       }
       ttDates.innerHTML = html;
     }
