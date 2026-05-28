@@ -29,6 +29,11 @@ jobs:
           fi
           printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+          # debug：驗證 JSON 可解析、能拿到 project_id（不會印敏感欄位）
+          echo "--- SA file info ---"
+          ls -la "$RUNNER_TEMP/sa.json"
+          echo "First 50 chars: $(head -c 50 "$RUNNER_TEMP/sa.json")"
+          node -e "try { const sa = JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/sa.json','utf8')); console.log('✓ JSON valid'); console.log('project_id:', sa.project_id); console.log('client_email:', sa.client_email); console.log('private_key_id:', sa.private_key_id ? sa.private_key_id.slice(0,8)+'...' : 'MISSING'); console.log('private_key starts with:', sa.private_key ? sa.private_key.slice(0,30) : 'MISSING'); } catch (e) { console.error('✗ JSON parse failed:', e.message); process.exit(1); }"
 
       - name: 抓 Firestore 全部資料 → JSON
         run: node .github/scripts/firestore-backup.mjs
