@@ -1356,6 +1356,61 @@ function maybeScheduleCleanup() {
   setTimeout(() => cleanupOldData(), 8000);
 }
 
+/* ══════════════════════════════════════════════
+   分類自動修補
+   - 掃 taskTemplates 裡有的 category，比對 settings.categories
+   - 缺的補在最後，不動既有順序
+   - 同一台瀏覽器一天最多跑一次
+══════════════════════════════════════════════ */
+const CATS_REPAIR_LOCK_KEY = 'hcc-last-cats-repair-date';
+
+async function repairCategoriesIfNeeded() {
+  const todayKey = fmtDate(REAL_TODAY);
+  if (localStorage.getItem(CATS_REPAIR_LOCK_KEY) === todayKey) return;
+
+  // templates 還沒載入完就先別跑
+  if (!Array.isArray(taskTemplates) || taskTemplates.length === 0) return;
+
+  const tplCats = new Set();
+  taskTemplates.forEach(t => {
+    if (typeof t.category === 'string' && t.category.trim()) tplCats.add(t.category.trim());
+  });
+  if (tplCats.size === 0) {
+    localStorage.setItem(CATS_REPAIR_LOCK_KEY, todayKey);
+    return;
+  }
+
+  const currentSet = new Set(categories);
+  const missing = [...tplCats].filter(c => !currentSet.has(c));
+  if (missing.length === 0) {
+    localStorage.setItem(CATS_REPAIR_LOCK_KEY, todayKey);
+    return;
+  }
+
+  console.log(`[cats-repair] 發現 ${missing.length} 個缺失分類，自動補回：`, missing);
+  try {
+    await mutateSettingsArray('categories', arr => {
+      const set = new Set(arr);
+      const toAdd = missing.filter(c => !set.has(c));
+      return toAdd.length ? [...arr, ...toAdd] : arr;
+    });
+    localStorage.setItem(CATS_REPAIR_LOCK_KEY, todayKey);
+    console.log('[cats-repair] ✓ 完成');
+  } catch (err) {
+    console.error('[cats-repair] 失敗（下次開啟會再試）', err);
+  }
+}
+
+let _catsRepairScheduled = false;
+let _templatesLoaded = false;
+let _settingsLoaded = false;
+function maybeScheduleCatsRepair() {
+  if (_catsRepairScheduled || !_templatesLoaded || !_settingsLoaded) return;
+  _catsRepairScheduled = true;
+  // 比 cleanup 早跑，5 秒後執行
+  setTimeout(() => repairCategoriesIfNeeded(), 5000);
+}
+
 async function safeInitSettingsIfMissing() {
   // 只在雲端真的沒有 doc 時才建立；用 transaction 確保不會覆蓋同時被建立的資料。
   try {
@@ -1436,6 +1491,9 @@ onSnapshot(doc(db, "settings", "global"), (dSnap) => {
   });
 
   if (Object.keys(wipedFields).length) warnSettingsWipe(wipedFields);
+
+  _settingsLoaded = true;
+  maybeScheduleCatsRepair();
 });
 
 onSnapshot(collection(db, "templates"), (snap) => {
@@ -1443,6 +1501,8 @@ onSnapshot(collection(db, "templates"), (snap) => {
   snap.forEach(d => taskTemplates.push({ id: d.id, ...d.data() }));
   scheduleRenderPool();
   scheduleRenderCalendar();
+  _templatesLoaded = true;
+  maybeScheduleCatsRepair();
 });
 
 onSnapshot(collection(db, "tasks"), (snap) => {
