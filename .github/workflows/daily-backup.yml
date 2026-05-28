@@ -1,0 +1,141 @@
+name: 每日自動備份 Firestore
+
+# 台灣時間 凌晨 3 點 = UTC 19:00（前一天）
+on:
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          # 切到 backups 分支（不存在就建一個空的）
+          ref: main
+
+      - name: 從 secret 還原 service account
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::缺少 GitHub Secret: FIREBASE_SERVICE_ACCOUNT"
+            exit 1
+          fi
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+
+      - name: 抓 Firestore 全部資料 → JSON
+        run: |
+          mkdir -p backup-out
+          node --input-type=module <<'EOF'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { createSign } from 'node:crypto';
+          import https from 'node:https';
+
+          const SA = JSON.parse(readFileSync(process.env.RUNNER_TEMP + '/sa.json', 'utf8'));
+          const PROJECT = SA.project_id;
+          const COLLECTIONS = ['settings', 'templates', 'tasks', 'shifts'];
+
+          const b64url = b => Buffer.from(b).toString('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+          function jwt(scope) {
+            const now = Math.floor(Date.now()/1000);
+            const h = { alg:'RS256', typ:'JWT', kid:SA.private_key_id };
+            const p = { iss:SA.client_email, scope, aud:'https://oauth2.googleapis.com/token', iat:now, exp:now+3600 };
+            const enc = b64url(JSON.stringify(h)) + '.' + b64url(JSON.stringify(p));
+            const s = createSign('RSA-SHA256'); s.update(enc);
+            return enc + '.' + b64url(s.sign(SA.private_key));
+          }
+          function req(opts, body) {
+            return new Promise((res, rej) => {
+              const r = https.request(opts, x => { const c=[]; x.on('data', d=>c.push(d)); x.on('end', ()=>res({s:x.statusCode, b:Buffer.concat(c).toString('utf8')})); });
+              r.on('error', rej); if (body) r.write(body); r.end();
+            });
+          }
+          function decode(v) {
+            if (!v) return null;
+            if ('stringValue' in v) return v.stringValue;
+            if ('integerValue' in v) return Number(v.integerValue);
+            if ('doubleValue' in v) return v.doubleValue;
+            if ('booleanValue' in v) return v.booleanValue;
+            if ('nullValue' in v) return null;
+            if ('timestampValue' in v) return v.timestampValue;
+            if ('arrayValue' in v) return (v.arrayValue.values || []).map(decode);
+            if ('mapValue' in v) { const o={}; for (const [k,x] of Object.entries(v.mapValue.fields||{})) o[k]=decode(x); return o; }
+            return null;
+          }
+
+          // 取 token
+          const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt('https://www.googleapis.com/auth/datastore')}`;
+          const tokRes = await req({ method:'POST', hostname:'oauth2.googleapis.com', path:'/token', headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Content-Length':Buffer.byteLength(body) } }, body);
+          if (tokRes.s !== 200) { console.error('token fail', tokRes); process.exit(1); }
+          const token = JSON.parse(tokRes.b).access_token;
+
+          // 把每個 collection 全抓下來
+          const out = { version:1, project:PROJECT, exportedAt: new Date().toISOString(), collections:{} };
+          for (const coll of COLLECTIONS) {
+            out.collections[coll] = {};
+            let pageToken = null;
+            do {
+              let path = `/v1/projects/${PROJECT}/databases/(default)/documents/${coll}?pageSize=300`;
+              if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
+              const r = await req({ method:'GET', hostname:'firestore.googleapis.com', path, headers:{ Authorization:`Bearer ${token}` } });
+              if (r.s !== 200) { console.error(`${coll} fail`, r); process.exit(1); }
+              const data = JSON.parse(r.b);
+              (data.documents || []).forEach(d => {
+                const id = d.name.split('/').pop();
+                const obj = {};
+                for (const [k,v] of Object.entries(d.fields || {})) obj[k] = decode(v);
+                out.collections[coll][id] = obj;
+              });
+              pageToken = data.nextPageToken;
+            } while (pageToken);
+            console.log(`${coll}: ${Object.keys(out.collections[coll]).length} docs`);
+          }
+
+          const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,16);
+          const filename = `backup-${ts}.json`;
+          writeFileSync(`backup-out/${filename}`, JSON.stringify(out, null, 2));
+          writeFileSync('backup-out/latest.json', JSON.stringify(out, null, 2));
+          console.log('✓ 寫入', filename);
+          EOF
+
+      - name: 推到 backups 分支
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 切到 backups 分支（不存在則新建一個只有 backup 檔的 orphan 分支）
+          if git ls-remote --exit-code --heads origin backups >/dev/null 2>&1; then
+            git fetch origin backups
+            git checkout backups
+          else
+            git checkout --orphan backups
+            git rm -rf . 2>/dev/null || true
+            echo "# Firestore daily backups" > README.md
+            git add README.md
+            git commit -m "init backups branch"
+          fi
+
+          mkdir -p daily
+          cp backup-out/*.json daily/ 2>/dev/null || true
+
+          # 只留最近 60 個檔案（不含 latest.json）
+          ls -t daily/backup-*.json 2>/dev/null | tail -n +61 | xargs -r rm
+
+          # latest.json 放根目錄
+          cp backup-out/latest.json latest.json
+
+          git add daily/ latest.json
+          if git diff --cached --quiet; then
+            echo "沒有變更，跳過 commit"
+          else
+            git commit -m "backup $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push origin backups
+          fi

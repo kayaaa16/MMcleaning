@@ -1,0 +1,44 @@
+name: 自動部署 Firestore Rules
+
+# 只有 firestore.rules 被改才會跑（手動也可以）
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - '.github/workflows/deploy-firestore-rules.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 從 secret 還原 service account JSON
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::缺少 GitHub Secret: FIREBASE_SERVICE_ACCOUNT"
+            exit 1
+          fi
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: 寫一份最小的 firebase.json（指向 firestore.rules）
+        run: |
+          cat > firebase.json <<'EOF'
+          {
+            "firestore": {
+              "rules": "firestore.rules"
+            }
+          }
+          EOF
+
+      - name: 安裝 firebase-tools
+        run: npm install -g firebase-tools@13
+
+      - name: 部署 rules
+        run: |
+          firebase deploy --only firestore:rules --project mmcleaning-c3042 --non-interactive
