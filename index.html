@@ -950,7 +950,8 @@ body {
       <div id="emp-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); padding:6px; border-radius:6px; background:var(--surf2);">
       </div>
     </div>
-    <div class="mfoot">
+    <div class="mfoot" style="justify-content: space-between;">
+      <button class="mbtn mbtn-cancel" id="emp-restore-btn" title="若雲端員工資料被異常清除，可從本機備份還原" style="background: var(--surf2); color: var(--txt2);">↻ 從本機備份還原</button>
       <button class="mbtn mbtn-cancel" id="emp-m-close">關閉</button>
     </div>
   </div>
@@ -1067,7 +1068,7 @@ body {
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, runTransaction, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBH1iogajhb9vYdn72VQVj2BhKcssjc6AI",
@@ -1081,6 +1082,48 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// 啟用 IndexedDB 離線快取：下次打開直接讀本機快取，只同步差異，
+// 大幅減少初次載入卡頓。多分頁同時開啟時會失敗（屬於正常情況），不影響功能。
+enableIndexedDbPersistence(db).catch(err => {
+  if (err.code === 'failed-precondition') {
+    console.info('[persistence] 另一個分頁已啟用快取，本分頁略過。');
+  } else if (err.code === 'unimplemented') {
+    console.info('[persistence] 此瀏覽器不支援 IndexedDB 持久化。');
+  } else {
+    console.warn('[persistence] 啟用失敗：', err);
+  }
+});
+
+// 渲染合併：多個 snapshot 在同一個 animation frame 內合併成一次渲染，
+// 避免 settings/templates/tasks/shifts 同時送達造成連續 4~8 次 full rerender。
+let _renderCalendarScheduled = false;
+let _renderPoolScheduled = false;
+let _renderTodayScheduled = false;
+function scheduleRenderCalendar() {
+  if (_renderCalendarScheduled) return;
+  _renderCalendarScheduled = true;
+  requestAnimationFrame(() => {
+    _renderCalendarScheduled = false;
+    if (typeof renderCalendar === 'function') renderCalendar();
+  });
+}
+function scheduleRenderPool() {
+  if (_renderPoolScheduled) return;
+  _renderPoolScheduled = true;
+  requestAnimationFrame(() => {
+    _renderPoolScheduled = false;
+    if (typeof renderPool === 'function') renderPool();
+  });
+}
+function scheduleRenderToday() {
+  if (_renderTodayScheduled) return;
+  _renderTodayScheduled = true;
+  requestAnimationFrame(() => {
+    _renderTodayScheduled = false;
+    if (typeof renderTodayPanel === 'function') renderTodayPanel();
+  });
+}
 
 /* ══════════════════════════════════════════════
    SAFE FIRESTORE WRITERS
@@ -1146,35 +1189,185 @@ let currentShiftDate = '';
 let shiftUnsubscribe = null;
 
 /* ══════════════════════════════════════════════
+   SETTINGS BACKUP / RESTORE 保護機制
+   - 本地 localStorage 備份 employees / shiftRoles / categories
+   - 偵測雲端「突然變空」或「縮水」時不套用，警告使用者
+   - 提供一鍵還原（從備份寫回雲端）
+══════════════════════════════════════════════ */
+const SETTINGS_BACKUP_KEY = 'hcc-settings-backup-v1';
+
+function readSettingsBackup() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_BACKUP_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function writeSettingsBackup(patch) {
+  try {
+    const prev = readSettingsBackup() || {};
+    const next = { ...prev, ...patch, savedAt: Date.now() };
+    localStorage.setItem(SETTINGS_BACKUP_KEY, JSON.stringify(next));
+  } catch (err) {
+    console.warn('[settings backup] localStorage 寫入失敗', err);
+  }
+}
+
+// 偵測異常縮水：雲端內容若比備份少超過一半（或從非空變空），視為可疑
+function looksLikeAccidentalWipe(field, incoming, backup) {
+  if (!Array.isArray(incoming)) return false;
+  if (!backup || !Array.isArray(backup[field])) return false;
+  const prev = backup[field];
+  if (prev.length === 0) return false;
+  if (incoming.length === 0) return true;
+  return incoming.length * 2 < prev.length; // 縮水超過一半
+}
+
+let settingsWipeWarned = false;
+let suspectedWipeFields = {}; // { employees: [...prev], shiftRoles: [...prev] }
+
+function warnSettingsWipe(fields) {
+  suspectedWipeFields = { ...suspectedWipeFields, ...fields };
+  if (settingsWipeWarned) return;
+  settingsWipeWarned = true;
+  setTimeout(() => {
+    const list = Object.keys(suspectedWipeFields).map(f => {
+      const labelMap = { employees: '員工', shiftRoles: '班表項目', categories: '區域' };
+      return `${labelMap[f] || f}（備份有 ${suspectedWipeFields[f].length} 筆）`;
+    }).join('、');
+    if (typeof sysAlert === 'function') {
+      sysAlert(
+        `⚠️ 偵測到雲端資料異常縮水：${list}。\n\n` +
+        `為避免資料被清掉，目前畫面仍顯示本機備份內容。\n` +
+        `請開啟「管理員工」並按下「從本機備份還原」即可寫回雲端，\n` +
+        `或者若這是預期內的清除，再次手動編輯也會把備份覆蓋掉。`
+      );
+    }
+    settingsWipeWarned = false;
+  }, 800);
+}
+
+async function restoreSettingsFromBackup() {
+  const backup = readSettingsBackup();
+  if (!backup) {
+    sysAlert('本機沒有可用的備份。');
+    return;
+  }
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(SETTINGS_REF());
+      const current = snap.exists() ? snap.data() : {};
+      const merged = { ...current };
+      ['employees', 'shiftRoles', 'categories'].forEach(field => {
+        const backupArr = Array.isArray(backup[field]) ? backup[field] : null;
+        if (!backupArr) return;
+        const currentArr = Array.isArray(current[field]) ? current[field] : [];
+        // 合併：以備份為主，再把雲端目前還有、備份沒有的補進去（避免漏掉新加的）
+        const set = new Set(backupArr);
+        const extras = currentArr.filter(v => !set.has(v));
+        merged[field] = [...backupArr, ...extras];
+      });
+      if (snap.exists()) {
+        tx.update(SETTINGS_REF(), merged);
+      } else {
+        tx.set(SETTINGS_REF(), merged);
+      }
+    });
+    suspectedWipeFields = {};
+    sysAlert('✓ 已從本機備份還原。');
+  } catch (err) {
+    console.error('[settings restore] 失敗', err);
+    sysAlert('還原失敗：' + err.message);
+  }
+}
+
+async function safeInitSettingsIfMissing() {
+  // 只在雲端真的沒有 doc 時才建立；用 transaction 確保不會覆蓋同時被建立的資料。
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(SETTINGS_REF());
+      if (snap.exists()) return;
+      const backup = readSettingsBackup() || {};
+      tx.set(SETTINGS_REF(), {
+        categories: backup.categories || ['A棟','B棟','公共區域'],
+        employees: backup.employees || [],
+        shiftRoles: backup.shiftRoles || shiftRoles
+      });
+    });
+  } catch (err) {
+    console.error('[settings init] 失敗', err);
+  }
+}
+
+/* ══════════════════════════════════════════════
    DB REALTIME LISTENERS
 ══════════════════════════════════════════════ */
 onSnapshot(doc(db, "settings", "global"), (dSnap) => {
-  if (dSnap.exists()) {
-    const data = dSnap.data();
-    if (data.categories) {
+  if (!dSnap.exists()) {
+    // 不要直接 setDoc 覆蓋——改走 transaction，且優先用本機備份回填
+    safeInitSettingsIfMissing();
+    return;
+  }
+
+  const data = dSnap.data();
+  const backup = readSettingsBackup();
+  const wipedFields = {};
+
+  // categories：縮水保護
+  if (Array.isArray(data.categories)) {
+    if (looksLikeAccidentalWipe('categories', data.categories, backup)) {
+      wipedFields.categories = backup.categories;
+      categories = [...backup.categories]; // 本地 fallback 用備份顯示
+      renderPoolAreaTabs();
+    } else {
       categories = data.categories;
       renderPoolAreaTabs();
     }
-    if (data.employees) {
+  }
+
+  // employees：縮水保護
+  if (Array.isArray(data.employees)) {
+    if (looksLikeAccidentalWipe('employees', data.employees, backup)) {
+      wipedFields.employees = backup.employees;
+      employees = [...backup.employees]; // 本地 fallback
+      if (currentShiftDate) requestAnimationFrame(() => renderShiftRows());
+      if (typeof renderEmpList === 'function') renderEmpList();
+    } else {
       employees = data.employees;
-      if (currentShiftDate) renderShiftRows();
+      if (currentShiftDate) requestAnimationFrame(() => renderShiftRows());
       if (typeof renderEmpList === 'function') renderEmpList();
     }
-    if (data.shiftRoles) {
+  }
+
+  // shiftRoles：縮水保護
+  if (Array.isArray(data.shiftRoles)) {
+    if (looksLikeAccidentalWipe('shiftRoles', data.shiftRoles, backup)) {
+      wipedFields.shiftRoles = backup.shiftRoles;
+      shiftRoles = [...backup.shiftRoles]; // 本地 fallback
+      if (currentShiftDate) requestAnimationFrame(() => renderShiftRows());
+      if (typeof renderShiftRoleList === 'function') renderShiftRoleList();
+    } else {
       shiftRoles = data.shiftRoles;
-      if (currentShiftDate) renderShiftRows();
+      if (currentShiftDate) requestAnimationFrame(() => renderShiftRows());
       if (typeof renderShiftRoleList === 'function') renderShiftRoleList();
     }
-  } else {
-    setDoc(doc(db, "settings", "global"), { categories: ['A棟','B棟','公共區域'], employees: [], shiftRoles: shiftRoles });
   }
+
+  // 套用後存備份（只存實際採用的本地 state，避免把可疑的雲端值蓋掉備份）
+  writeSettingsBackup({
+    categories: Array.isArray(categories) ? [...categories] : [],
+    employees: Array.isArray(employees) ? [...employees] : [],
+    shiftRoles: Array.isArray(shiftRoles) ? [...shiftRoles] : []
+  });
+
+  if (Object.keys(wipedFields).length) warnSettingsWipe(wipedFields);
 });
 
 onSnapshot(collection(db, "templates"), (snap) => {
   taskTemplates = [];
   snap.forEach(d => taskTemplates.push({ id: d.id, ...d.data() }));
-  renderPool(); 
-  renderCalendar();
+  scheduleRenderPool();
+  scheduleRenderCalendar();
 });
 
 onSnapshot(collection(db, "tasks"), (snap) => {
@@ -1190,9 +1383,9 @@ onSnapshot(collection(db, "tasks"), (snap) => {
       poolTasksByMonth[mk].push(data);
     }
   });
-  renderTodayPanel();
-  renderPool(); 
-  renderCalendar();
+  scheduleRenderToday();
+  scheduleRenderPool();
+  scheduleRenderCalendar();
 });
 
 let allShifts = {};
@@ -1201,7 +1394,7 @@ onSnapshot(collection(db, "shifts"), (snap) => {
   snap.forEach(d => {
     allShifts[d.id] = d.data();
   });
-  renderCalendar();
+  scheduleRenderCalendar();
 });
 
 /* ══════════════════════════════════════════════
@@ -2734,6 +2927,25 @@ $('manage-emp-btn').addEventListener('click', () => {
 
 $('emp-m-close').addEventListener('click', () => {
   empModalOverlay.classList.remove('open');
+});
+
+$('emp-restore-btn').addEventListener('click', () => {
+  const backup = readSettingsBackup();
+  if (!backup || (!backup.employees && !backup.shiftRoles && !backup.categories)) {
+    sysAlert('本機沒有可用的備份。');
+    return;
+  }
+  const empCount = Array.isArray(backup.employees) ? backup.employees.length : 0;
+  const roleCount = Array.isArray(backup.shiftRoles) ? backup.shiftRoles.length : 0;
+  const savedAt = backup.savedAt ? new Date(backup.savedAt).toLocaleString('zh-TW', { hour12: false }) : '未知時間';
+  sysConfirm(
+    `將從本機備份還原以下資料到雲端：\n` +
+    `・員工 ${empCount} 筆\n` +
+    `・班表項目 ${roleCount} 筆\n` +
+    `（備份時間：${savedAt}）\n\n` +
+    `雲端目前若有不在備份內的項目會被一併保留。確定要還原嗎？`,
+    () => { restoreSettingsFromBackup(); }
+  );
 });
 
 empModalOverlay.addEventListener('click', e => { 
