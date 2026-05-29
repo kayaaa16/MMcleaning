@@ -2383,12 +2383,16 @@ function mkDayCell(dateObj, isOther=false) {
   if (allShifts[ds]) {
     const shiftData = allShifts[ds];
     const uniqueNames = new Set();
+    // 支援多種分隔符：英文逗號、中文逗號、頓號、分號、斜線、空白
+    const SPLIT_RE = /[,，、；;／\/\s]+/;
     Object.keys(shiftData).forEach(key => {
       const valStr = shiftData[key];
       if (typeof valStr === 'string' && valStr.trim()) {
-        valStr.split(',').forEach(name => {
+        valStr.split(SPLIT_RE).forEach(name => {
           const trimmed = name.trim();
-          if (trimmed && trimmed !== '【是誰啊】') uniqueNames.add(trimmed);
+          if (!trimmed || trimmed === '【是誰啊】') return;
+          // 大小寫不敏感去重（"AR" 和 "ar" 算同一個人）
+          uniqueNames.add(trimmed.toLowerCase());
         });
       }
     });
