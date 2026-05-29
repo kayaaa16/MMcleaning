@@ -78,17 +78,34 @@ async function getToken() {
   return JSON.parse(res.body).access_token;
 }
 
+async function fetchWithRetry(opts, label, maxTries = 6) {
+  let lastErr = '';
+  for (let attempt = 1; attempt <= maxTries; attempt++) {
+    const res = await request(opts);
+    if (res.status === 200) return res;
+    lastErr = `${res.status}: ${res.body.slice(0, 200)}`;
+    const is429 = res.status === 429 || /RESOURCE_EXHAUSTED|Quota/i.test(res.body);
+    if (!is429 || attempt === maxTries) {
+      throw new Error(`${label} ${lastErr}`);
+    }
+    // 指數退避：5s, 15s, 45s, 135s, 240s (max)
+    const waitSec = Math.min(240, 5 * Math.pow(3, attempt - 1));
+    console.log(`[backup] ${label} 429，等 ${waitSec}s 後重試 (${attempt}/${maxTries})`);
+    await new Promise(r => setTimeout(r, waitSec * 1000));
+  }
+  throw new Error(`${label} 重試 ${maxTries} 次後仍失敗：${lastErr}`);
+}
+
 async function listCollection(token, coll) {
   const out = {};
   let pageToken = null;
   do {
     let path = `/v1/projects/${PROJECT}/databases/(default)/documents/${coll}?pageSize=300`;
     if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
-    const res = await request({
+    const res = await fetchWithRetry({
       method: 'GET', hostname: 'firestore.googleapis.com', path,
       headers: { Authorization: `Bearer ${token}` }
-    });
-    if (res.status !== 200) throw new Error(`${coll} ${res.status}: ${res.body}`);
+    }, `${coll}${pageToken ? ' (page)' : ''}`);
     const data = JSON.parse(res.body);
     (data.documents || []).forEach(d => {
       const id = d.name.split('/').pop();

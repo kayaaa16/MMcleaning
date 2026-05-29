@@ -1,9 +1,11 @@
 name: 每日自動備份 Firestore
 
-# 台灣時間 凌晨 3 點 = UTC 19:00（前一天）
+# Firestore 免費方案配額每天美西時間午夜重置
+# 故排在配額剛重置後（UTC 08:00 / 太平洋時間 00:00 / 台灣時間 16:00）
+# 此時讀取配額最充裕，備份最不易碰到 429
 on:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch: {}
 
 permissions:
