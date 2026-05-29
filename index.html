@@ -522,6 +522,7 @@ body {
 .day-zone[data-zone="B"]  .day-zone-label { color: #2563eb; }
 .day-zone[data-zone="P"]  .day-zone-label { color: #9333ea; }
 .day-zone[data-zone="BP"] .day-zone-label { color: var(--green); }
+.day-zone[data-zone="共"] .day-zone-label { color: #0891b2; }
 .day-zone.drag-over {
   background: #eff6ff;
 }
@@ -2433,14 +2434,14 @@ function mkDayCell(dateObj, isOther=false) {
   }
 
   if (useZones) {
-    const groups = { '未': [], 'B': [], 'P': [], 'BP': [] };
+    const groups = { '未': [], 'B': [], 'P': [], 'BP': [], '共': [] };
     dayTasks.forEach(t => {
       const a = t.assignment;
-      if (a === 'B' || a === 'P' || a === 'BP') groups[a].push(t);
+      if (a === 'B' || a === 'P' || a === 'BP' || a === '共') groups[a].push(t);
       else groups['未'].push(t);
     });
 
-    const zoneOrder = ['未', 'B', 'P', 'BP'];
+    const zoneOrder = ['未', 'B', 'P', 'BP', '共'];
     let visibleCount = 0;
     let truncated = 0;
 
