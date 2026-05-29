@@ -2389,7 +2389,10 @@ function mkDayCell(dateObj, isOther=false) {
     const NAME_ALIASES = {
       'ar': 'arven',
     };
-    Object.keys(shiftData).forEach(key => {
+    // 只算當前有效 shiftRoles 裡的欄位，跳過過期 role 殘留
+    // （沒有 shiftRoles 時退回讀全部欄位，保險）
+    const rolesToCount = Array.isArray(shiftRoles) && shiftRoles.length ? shiftRoles : Object.keys(shiftData);
+    rolesToCount.forEach(key => {
       const valStr = shiftData[key];
       if (typeof valStr === 'string' && valStr.trim()) {
         valStr.split(SPLIT_RE).forEach(name => {
