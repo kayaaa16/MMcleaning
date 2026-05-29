@@ -2385,14 +2385,19 @@ function mkDayCell(dateObj, isOther=false) {
     const uniqueNames = new Set();
     // 支援多種分隔符：英文逗號、中文逗號、頓號、分號、斜線、空白
     const SPLIT_RE = /[,，、；;／\/\s]+/;
+    // 別名對應（左：暱稱 → 右：正式名）。新增別名直接在這加。
+    const NAME_ALIASES = {
+      'ar': 'arven',
+    };
     Object.keys(shiftData).forEach(key => {
       const valStr = shiftData[key];
       if (typeof valStr === 'string' && valStr.trim()) {
         valStr.split(SPLIT_RE).forEach(name => {
           const trimmed = name.trim();
           if (!trimmed || trimmed === '【是誰啊】') return;
-          // 大小寫不敏感去重（"AR" 和 "ar" 算同一個人）
-          uniqueNames.add(trimmed.toLowerCase());
+          const lower = trimmed.toLowerCase();
+          // 套用別名後再加入集合
+          uniqueNames.add(NAME_ALIASES[lower] || lower);
         });
       }
     });
