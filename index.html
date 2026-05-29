@@ -943,8 +943,8 @@ body {
       <input type="text" id="m-name" placeholder="例：男淋浴間清潔">
     </div>
     <div class="mfield">
-      <label for="m-count">每月執行次數</label>
-      <input type="number" id="m-count" value="1" min="1" max="31">
+      <label for="m-count">每月執行次數（上限 30）</label>
+      <input type="number" id="m-count" value="1" min="1" max="30">
     </div>
     <div class="mfield" id="m-cat-wrap">
       <label for="m-cat">區域</label>
@@ -1877,7 +1877,7 @@ mCancel.addEventListener('click', closeModal);
 mOverlay.addEventListener('click', e => { if (e.target === mOverlay) closeModal(); });
 mSave.addEventListener('click', () => {
   const name = mName.value.trim();
-  const count = Math.max(1, parseInt(mCount.value)||1);
+  const count = Math.min(30, Math.max(1, parseInt(mCount.value)||1));
   const cat   = mCat.value;
   if (!name) { mName.focus(); return; }
   if (_modalCb) _modalCb({ name, count, cat });
