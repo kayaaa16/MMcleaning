@@ -2285,6 +2285,42 @@ function mkTaskCard(task, src, showCat=false) {
         }
       }
     });
+  } else if (src === 'calendar') {
+    // 日曆卡之間互拖：同一天 → 換順序；跨天 → 由 cell 的 drop handler 接手
+    card.addEventListener('dragover', e => {
+      if (!dragData || dragSrc !== 'calendar') return;
+      if (dragData.date !== task.date) return; // 不同天交給 cell 處理
+      if (dragData.id === task.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = card.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+      if (e.clientY < mid) {
+        card.style.borderTop = '3px solid var(--blue)';
+      } else {
+        card.style.borderBottom = '3px solid var(--blue)';
+      }
+    });
+    card.addEventListener('dragleave', () => {
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+    });
+    card.addEventListener('drop', e => {
+      if (!dragData || dragSrc !== 'calendar') return;
+      if (dragData.date !== task.date) return;
+      if (dragData.id === task.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      card.style.borderTop = '';
+      card.style.borderBottom = '';
+      droppedOk = true;
+      const rect = card.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const isAfter = e.clientY >= mid;
+      reorderCalendarTask(dragData, task, isAfter);
+    });
   }
 
   return card;
@@ -2423,6 +2459,14 @@ function mkDayCell(dateObj, isOther=false) {
   const dayTasks = scheduledTasks
     .filter(t=>t.date===ds)
     .sort((a,b)=>{
+      // 優先使用手動排序的 cellOrder（拖曳定的位置）
+      const ao = typeof a.cellOrder === 'number' ? a.cellOrder : null;
+      const bo = typeof b.cellOrder === 'number' ? b.cellOrder : null;
+      if (ao !== null && bo !== null) return ao - bo;
+      if (ao !== null) return -1;
+      if (bo !== null) return 1;
+
+      // 兩個都沒 cellOrder → fallback 到原本邏輯（分類 > 名稱 > 狀態）
       const catA = catOf(a), catB = catOf(b);
       const idxA = categories.indexOf(catA), idxB = categories.indexOf(catB);
       const sortA = idxA === -1 ? 999 : idxA;
@@ -2431,7 +2475,7 @@ function mkDayCell(dateObj, isOther=false) {
 
       const nameCmp = a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
       if (nameCmp !== 0) return nameCmp;
-      
+
       const aDone = a.status === 'completed' ? 1 : 0;
       const bDone = b.status === 'completed' ? 1 : 0;
       return aDone - bDone;
@@ -2532,7 +2576,57 @@ function handleDrop(task, src, targetDate, assignment) {
   const update = { date: targetDate };
   if (src === 'pool') update.status = 'pending';
   if (assignment !== undefined) update.assignment = assignment;
+
+  // 拖到新一天時，給它「末位 + 1」的 cellOrder，新卡會排在最後面
+  // 如果是同一天內換位置（reorder），不在這裡處理（由 reorderCalendarTask 接手）
+  if (src !== 'calendar' || task.date !== targetDate) {
+    const existing = scheduledTasks
+      .filter(t => t.date === targetDate && t.id !== task.id)
+      .map(t => typeof t.cellOrder === 'number' ? t.cellOrder : -1);
+    const maxOrd = existing.length ? Math.max(...existing) : -1;
+    update.cellOrder = maxOrd + 1;
+  }
+
   updateDoc(doc(db, "tasks", task.id), update);
+}
+
+// 同一天內，把 draggedTask 拖到 refTask 的「前」或「後」
+// 一次性 renumber 該日全部 task 的 cellOrder（用 batch）
+async function reorderCalendarTask(draggedTask, refTask, isAfter) {
+  if (!refTask || draggedTask.id === refTask.id || draggedTask.date !== refTask.date) return;
+  const ds = refTask.date;
+
+  // 用畫面上看到的順序排序（複製 mkDayCell 裡的排序邏輯）
+  const sortFn = (a, b) => {
+    const ao = typeof a.cellOrder === 'number' ? a.cellOrder : null;
+    const bo = typeof b.cellOrder === 'number' ? b.cellOrder : null;
+    if (ao !== null && bo !== null) return ao - bo;
+    if (ao !== null) return -1;
+    if (bo !== null) return 1;
+    const catA = catOf(a), catB = catOf(b);
+    const idxA = categories.indexOf(catA), idxB = categories.indexOf(catB);
+    const sortA = idxA === -1 ? 999 : idxA;
+    const sortB = idxB === -1 ? 999 : idxB;
+    if (sortA !== sortB) return sortA - sortB;
+    const nameCmp = a.name.localeCompare(b.name, 'zh-TW-u-co-stroke');
+    if (nameCmp !== 0) return nameCmp;
+    return (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0);
+  };
+
+  const others = scheduledTasks.filter(t => t.date === ds && t.id !== draggedTask.id).sort(sortFn);
+  const refIdx = others.findIndex(t => t.id === refTask.id);
+  if (refIdx === -1) return;
+  const insertIdx = isAfter ? refIdx + 1 : refIdx;
+  const newOrder = [...others.slice(0, insertIdx), draggedTask, ...others.slice(insertIdx)];
+
+  // Renumber 整天
+  const batch = writeBatch(db);
+  newOrder.forEach((t, i) => {
+    if (t.cellOrder !== i) {
+      batch.update(doc(db, "tasks", t.id), { cellOrder: i });
+    }
+  });
+  try { await batch.commit(); } catch (err) { console.error('[reorder] failed', err); }
 }
 
 /* ══════════════════════════════════════════════
